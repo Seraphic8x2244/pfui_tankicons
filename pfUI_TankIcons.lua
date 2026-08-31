@@ -71,21 +71,28 @@ local function RegisterAddon()
     local function FrameKind(frame)
       if not frame then return nil end
 
+      -- pfUI's stable internal identities are the primary discriminator.
+      -- Group frames use fname Group0..Group4; raid frames use Raid1..Raid40.
+      if frame.fname then
+        local fname = tostring(frame.fname)
+        if string.sub(fname, 1, 5) == "Group" then return "group" end
+        if string.sub(fname, 1, 4) == "Raid" then return "raid" end
+      end
+
+      -- Compatibility fallback for forks retaining Shagu's global frame names.
       local name = frame.GetName and frame:GetName()
       if name then
         if string.sub(name, 1, 6) == "pfRaid" then return "raid" end
         if string.sub(name, 1, 7) == "pfGroup" then return "group" end
       end
 
-      -- Compatibility fallback for forks using different global frame names.
+      -- Last-resort fallback for forks with renamed frames.
       if frame.fname then
         local fname = string.lower(tostring(frame.fname))
         if string.find(fname, "raid") then return "raid" end
-        if string.find(fname, "group") or string.find(fname, "party") then return "group" end
+        if string.find(fname, "group") then return "group" end
       end
 
-      -- Party-labelled frames are group frames unless identified as raid frames above.
-      if frame.label == "party" then return "group" end
       return nil
     end
 
@@ -101,14 +108,23 @@ local function RegisterAddon()
       local kind = FrameKind(frame)
       if not kind then return end
 
-      local icon = frame:CreateTexture(nil, "OVERLAY")
-      icon:SetTexture(ICON)
-      icon:SetWidth(ICON_SIZE)
-      icon:SetHeight(ICON_SIZE)
-      icon:SetTexCoord(.08, .92, .08, .92)
-      icon:Hide()
+      -- A texture placed directly on the unitframe parent can be covered by
+      -- pfUI's child health/power frames. Give the tank marker its own child
+      -- frame at a deliberately higher frame level, then draw the texture in it.
+      local holder = CreateFrame("Frame", nil, frame)
+      holder:SetWidth(ICON_SIZE)
+      holder:SetHeight(ICON_SIZE)
+      holder:SetFrameLevel(frame:GetFrameLevel() + 20)
 
-      frame.pfTankIcon = icon
+      local icon = holder:CreateTexture(nil, "OVERLAY")
+      icon:SetTexture(ICON)
+      icon:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, 0)
+      icon:SetPoint("BOTTOMRIGHT", holder, "BOTTOMRIGHT", 0, 0)
+      icon:SetTexCoord(.08, .92, .08, .92)
+      holder:Hide()
+
+      frame.pfTankIcon = holder
+      frame.pfTankIconTexture = icon
       frame.pfTankIconKind = kind
 
       trackedCount = trackedCount + 1
@@ -148,8 +164,34 @@ local function RegisterAddon()
       end
     end
 
+    local function DiscoverPfUIFrames()
+      local i, frame
+
+      -- pfUI registers every unitframe in this array when CreateUnitFrame runs.
+      -- This is the authoritative source and works even if a fork changes globals.
+      if pfUI.uf and pfUI.uf.frames then
+        for i = 1, table.getn(pfUI.uf.frames) do
+          frame = pfUI.uf.frames[i]
+          if frame then EnsurePfUIIcon(frame) end
+        end
+      end
+
+      -- Compatibility fallback for older/forked builds that may not populate
+      -- pfUI.uf.frames in the same way.
+      for i = 0, 4 do
+        frame = getglobal("pfGroup" .. i)
+        if frame then EnsurePfUIIcon(frame) end
+      end
+
+      for i = 1, 40 do
+        frame = getglobal("pfRaid" .. i)
+        if frame then EnsurePfUIIcon(frame) end
+      end
+    end
+
     local function UpdateTrackedFrames()
       local i
+      DiscoverPfUIFrames()
       for i = 1, trackedCount do
         UpdatePfUIFrame(tracked[i])
       end
@@ -257,12 +299,22 @@ local function RegisterAddon()
     HookRaidPanel()
     RegisterGUI()
 
-    -- pfUI's Toggle as Tank is implemented through UnitPopup_OnClick.
-    -- This post-hook sees the already-updated tankrole table.
+    -- pfUI also post-hooks UnitPopup_OnClick to change tankrole. Depending on
+    -- module registration order, our post-hook can run before pfUI's tank hook.
+    -- Queue a one-frame, one-shot refresh so every popup hook has finished first.
+    local deferred = CreateFrame("Frame")
+    deferred:Hide()
+    deferred:SetScript("OnUpdate", function()
+      this:Hide()
+      UpdateAll()
+    end)
+
+    local function QueueUpdateAll()
+      deferred:Show()
+    end
+
     if UnitPopup_OnClick and hooksecurefunc then
-      hooksecurefunc("UnitPopup_OnClick", function()
-        UpdateAll()
-      end)
+      hooksecurefunc("UnitPopup_OnClick", QueueUpdateAll)
     end
 
     local events = CreateFrame("Frame")

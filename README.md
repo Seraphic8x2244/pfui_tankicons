@@ -25,6 +25,11 @@ Available under **pfUI > Thirdparty > TankIcons**:
 
 Defaults preserve the original v0.1.0 placement: all icons visible, RaidTab Right, GroupFrame Top Right, RaidFrame Top Right.
 
+### 0.2.3
+
+- Fixes group-frame icons when pfUI group frames were created before TankIcons installed its unitframe refresh hook.
+- Uses pfUI's stable `Group0`–`Group4` / `Raid1`–`Raid40` frame identities before compatibility fallbacks.
+
 ## Compatibility
 
 Designed for pfUI versions/forks that expose the standard Shagu tank-role table:
@@ -45,4 +50,12 @@ The final path should be:
 
 ## Version
 
-0.2.0
+0.2.3
+
+Tank markers on pfUI group/raid unitframes are rendered through a high-level child frame so they stay above health and power bars.
+
+### 0.2.3
+
+- Discover pfUI group/raid frames from `pfUI.uf.frames`.
+- Refresh tank icons one frame after the popup toggle so pfUI has finished updating `tankrole`.
+- No polling loop is used.
