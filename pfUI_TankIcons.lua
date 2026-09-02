@@ -7,20 +7,7 @@ local ICON = "Interface\\Icons\\INV_Shield_06"
 local ICON_SIZE = 12
 local RAIDTAB_ICON_SIZE = 11
 local COMM_PREFIX = "PFTI"
-local COMM_VERSION = "1"
-local ADDON_VERSION = "0.3.4"
-
--- Register the hidden diagnostic slash command immediately at addon load.
--- The module installs its real handler once pfUI initialization completes.
-local DiagnosticHandler
-SLASH_PFTANKICONS1 = "/pfti"
-SlashCmdList["PFTANKICONS"] = function(msg)
-  if DiagnosticHandler then
-    DiagnosticHandler(msg)
-  elseif DEFAULT_CHAT_FRAME then
-    DEFAULT_CHAT_FRAME:AddMessage("TankIcons: module not initialized")
-  end
-end
+local ADDON_VERSION = "0.3.5"
 
 local UNIT_POINTS = {
   TOPLEFT     = { "TOPLEFT",     1, -1 },
@@ -62,14 +49,8 @@ local function RegisterAddon()
     local trackedCount = 0
     local raidPanelHooked = nil
     local guiRegistered = nil
-    local roleAuthority = {}
-    local roleState = {}
-    local currentLeader = nil
-    local lastSyncRequest = 0
-    local lastSnapshot = 0
-    local pendingToggle = {}
     local observedTankState = {}
-    local debugComms = nil
+    local UpdateAll
 
     local function Config()
       C[MODULE] = C[MODULE] or {}
@@ -115,55 +96,42 @@ local function RegisterAddon()
       return nil
     end
 
-    local function GroupLeaderName()
-      local i, name, rank
-      if GetNumRaidMembers() > 0 then
-        for i = 1, GetNumRaidMembers() do
-          name, rank = GetRaidRosterInfo(i)
-          if name and rank == 2 then return name end
-        end
-        return nil
-      end
-      return PartyLeaderName()
-    end
-
-    local function SenderAuthority(sender)
+    local function AuthorityForName(name)
       local rank, leader
-      if not sender then return 0 end
-
+      if not name then return 0 end
       if GetNumRaidMembers() > 0 then
-        rank = RaidRankByName(sender)
+        rank = RaidRankByName(name)
         if rank == 2 then return 2 end
         if rank == 1 then return 1 end
         return 0
       end
-
       if GetNumPartyMembers() > 0 then
         leader = PartyLeaderName()
-        if leader and sender == leader then return 1 end
+        if leader and leader == name then return 1 end
       end
-
       return 0
     end
 
     local function LocalAuthority()
-      return SenderAuthority(UnitName("player"))
+      return AuthorityForName(UnitName("player"))
     end
 
     local function IsNameInGroup(name)
-      local i, rosterName
-      if not name then return nil end
-
-      if GetNumRaidMembers() > 0 then
-        return RaidRankByName(name) ~= nil
-      end
-
+      local i, unit
+      if not name then return false end
       if UnitName("player") == name then return true end
-      for i = 1, GetNumPartyMembers() do
-        rosterName = UnitName("party" .. i)
-        if rosterName == name then return true end
+      if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+          unit = "raid" .. i
+          if UnitName(unit) == name then return true end
+        end
+      else
+        for i = 1, GetNumPartyMembers() do
+          unit = "party" .. i
+          if UnitName(unit) == name then return true end
+        end
       end
-      return nil
+      return false
     end
 
     local function CommChannel()
@@ -172,41 +140,50 @@ local function RegisterAddon()
       return nil
     end
 
-    local function DebugPrint(message)
-      if debugComms and DEFAULT_CHAT_FRAME then
-        DEFAULT_CHAT_FRAME:AddMessage("TankIcons " .. tostring(message))
-      end
-    end
-
-    local function SendComm(message)
+    local function SendTankChange(name, enabled)
       local channel
-      if not SyncEnabled() or not SendAddonMessage then
-        DebugPrint("SEND blocked: sync/API unavailable")
-        return
-      end
+      if not SyncEnabled() or not SendAddonMessage then return end
+      if LocalAuthority() == 0 then return end
+      if not IsNameInGroup(name) then return end
       channel = CommChannel()
-      if not channel then
-        DebugPrint("SEND blocked: not grouped")
-        return
+      if not channel then return end
+      SendAddonMessage(COMM_PREFIX, "T:" .. (enabled and "1" or "0") .. ":" .. name, channel)
+    end
+
+    local function ApplyRemoteTankChange(sender, message)
+      local flag, name, roles
+      if not SyncEnabled() then return end
+      if not sender or AuthorityForName(sender) == 0 then return end
+      local _, _, parsedFlag, parsedName = string.find(message or "", "^T:([01]):([^:]+)$")
+      flag, name = parsedFlag, parsedName
+      if not flag or not name or not IsNameInGroup(name) then return end
+      roles = TankRoles()
+      if not roles then return end
+      if flag == "1" then
+        roles[name] = true
+        observedTankState[name] = true
+      else
+        roles[name] = nil
+        observedTankState[name] = false
       end
-      DebugPrint("SEND " .. channel .. " " .. message)
-      SendAddonMessage(COMM_PREFIX, "V" .. COMM_VERSION .. ":" .. message, channel)
+      UpdateAll()
     end
 
-    local function SetTankRole(name, state)
-      local roles = TankRoles()
-      if not roles or not name then return end
-      if state then roles[name] = true else roles[name] = nil end
-      observedTankState[name] = state and true or false
-      if pfUI.uf and pfUI.uf.raid then pfUI.uf.raid:Show() end
-    end
-
-    local function UpdateAuthorityEpoch()
-      local leader = GroupLeaderName()
-      if leader ~= currentLeader then
-        currentLeader = leader
-        roleAuthority = {}
-        roleState = {}
+    local function RefreshObservedTankState()
+      local i, name
+      observedTankState = {}
+      name = UnitName("player")
+      if name then observedTankState[name] = IsTankName(name) end
+      if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+          name = UnitName("raid" .. i)
+          if name then observedTankState[name] = IsTankName(name) end
+        end
+      else
+        for i = 1, GetNumPartyMembers() do
+          name = UnitName("party" .. i)
+          if name then observedTankState[name] = IsTankName(name) end
+        end
       end
     end
 
@@ -381,188 +358,9 @@ local function RegisterAddon()
       end
     end
 
-    local function UpdateAll()
+    UpdateAll = function()
       UpdateTrackedFrames()
       UpdateRaidPanel()
-    end
-
-    local function RefreshObservedTankState()
-      local i, name
-      if GetNumRaidMembers() > 0 then
-        for i = 1, GetNumRaidMembers() do
-          name = GetRaidRosterInfo(i)
-          if name then observedTankState[name] = IsTankName(name) and true or false end
-        end
-      else
-        name = UnitName("player")
-        if name then observedTankState[name] = IsTankName(name) and true or false end
-        for i = 1, GetNumPartyMembers() do
-          name = UnitName("party" .. i)
-          if name then observedTankState[name] = IsTankName(name) and true or false end
-        end
-      end
-    end
-
-    local function BroadcastTankChange(name)
-      local authority, state, lockedBy
-      if not SyncEnabled() or not name or not IsNameInGroup(name) then return end
-
-      UpdateAuthorityEpoch()
-      authority = LocalAuthority()
-      if authority == 0 then
-        -- pfUI itself permits a local toggle, but TankIcons never broadcasts it
-        -- from an unauthorised member. Ask the authority for a fresh baseline.
-        SendComm("REQ")
-        return
-      end
-
-      lockedBy = roleAuthority[name] or 0
-      if lockedBy > authority then
-        -- A raid-leader change for this player outranks a later assistant toggle.
-        SetTankRole(name, roleState[name])
-        UpdateAll()
-        return
-      end
-
-      state = IsTankName(name) and true or false
-      roleAuthority[name] = authority
-      roleState[name] = state
-      SendComm("T:" .. (state and "1" or "0") .. ":" .. name)
-    end
-
-    local function BuildTankSnapshot()
-      local tanks = {}
-      local count = 0
-      local i, name
-
-      if GetNumRaidMembers() > 0 then
-        for i = 1, GetNumRaidMembers() do
-          name = GetRaidRosterInfo(i)
-          if name and IsTankName(name) then
-            count = count + 1
-            tanks[count] = name
-          end
-        end
-      else
-        name = UnitName("player")
-        if name and IsTankName(name) then count = count + 1; tanks[count] = name end
-        for i = 1, GetNumPartyMembers() do
-          name = UnitName("party" .. i)
-          if name and IsTankName(name) then
-            count = count + 1
-            tanks[count] = name
-          end
-        end
-      end
-
-      return table.concat(tanks, ",")
-    end
-
-    local function SendSnapshot()
-      local authority = LocalAuthority()
-      local now = GetTime()
-      if not SyncEnabled() or authority == 0 then return end
-
-      -- In raids the leader is the snapshot authority. Assistants still broadcast
-      -- live toggles, but do not compete with the leader during handshakes.
-      if GetNumRaidMembers() > 0 and authority ~= 2 then return end
-      if now - lastSnapshot < 2 then return end
-      lastSnapshot = now
-      SendComm("S:" .. BuildTankSnapshot())
-    end
-
-    local function ApplySnapshot(sender, list)
-      local authority = SenderAuthority(sender)
-      local present = {}
-      local name, i
-
-      if authority == 0 then return end
-      if GetNumRaidMembers() > 0 and authority ~= 2 then return end
-
-      if list and list ~= "" then
-        for name in string.gfind(list, "[^,]+") do
-          if IsNameInGroup(name) then present[name] = true end
-        end
-      end
-
-      -- A snapshot is a baseline, not a permanent leader lock. Direct leader
-      -- toggles after this point still outrank assistant toggles per player.
-      roleAuthority = {}
-      roleState = {}
-
-      if GetNumRaidMembers() > 0 then
-        for i = 1, GetNumRaidMembers() do
-          name = GetRaidRosterInfo(i)
-          if name then SetTankRole(name, present[name] and true or false) end
-        end
-      else
-        name = UnitName("player")
-        if name then SetTankRole(name, present[name] and true or false) end
-        for i = 1, GetNumPartyMembers() do
-          name = UnitName("party" .. i)
-          if name then SetTankRole(name, present[name] and true or false) end
-        end
-      end
-
-      UpdateAll()
-    end
-
-    local function ApplyRemoteToggle(sender, state, name)
-      local authority, previous
-      if not name or not IsNameInGroup(name) then return end
-      authority = SenderAuthority(sender)
-      if authority == 0 then return end
-
-      UpdateAuthorityEpoch()
-      previous = roleAuthority[name] or 0
-      if authority < previous then return end
-
-      roleAuthority[name] = authority
-      roleState[name] = state
-      SetTankRole(name, state)
-      UpdateAll()
-    end
-
-    local function RequestSync()
-      local now = GetTime()
-      if not SyncEnabled() or not CommChannel() then return end
-      if now - lastSyncRequest < 2 then return end
-      lastSyncRequest = now
-      SendComm("REQ")
-    end
-
-    local function HandleComm(prefix, message, channel, sender)
-      local version, payload, state, name, list
-      if prefix ~= COMM_PREFIX or not SyncEnabled() or not message or not sender then return end
-      DebugPrint("RECV " .. tostring(channel) .. " from " .. tostring(sender) .. ": " .. tostring(message))
-      if not IsNameInGroup(sender) then
-        DebugPrint("REJECT sender not in group: " .. tostring(sender))
-        return
-      end
-
-      -- Keep the wire format deliberately limited to ordinary printable
-      -- characters. Raw pipe characters are chat escape introducers in the
-      -- Vanilla client and can upset other addons that inspect chat traffic.
-      _, _, version, payload = string.find(message, "^V([0-9]+):(.+)$")
-      if version ~= COMM_VERSION or not payload then return end
-
-      -- Any current group member may request the baseline. Authority is required
-      -- only for messages that actually change tank state.
-      if payload == "REQ" then
-        SendSnapshot()
-        return
-      end
-
-      _, _, state, name = string.find(payload, "^T:([01]):(.+)$")
-      if state and name then
-        ApplyRemoteToggle(sender, state == "1", name)
-        return
-      end
-
-      _, _, list = string.find(payload, "^S:(.*)$")
-      if list ~= nil then
-        ApplySnapshot(sender, list)
-      end
     end
 
     local function RegisterGUI()
@@ -592,8 +390,6 @@ local function RegisterAddon()
       }
 
       CreateGUIEntry("Thirdparty", "TankIcons", function()
-        CreateConfig(function() UpdateAll(); RequestSync() end, "Tank Role Sync", cfg, "sync_enabled", "checkbox")
-
         CreateConfig(UpdateAll, "RaidTab Visibility", cfg, "raidtab_visible", "checkbox")
         CreateConfig(UpdateAll, "RaidTab Justification", cfg, "raidtab_justify", "dropdown", raidTabJustify)
 
@@ -602,6 +398,8 @@ local function RegisterAddon()
 
         CreateConfig(UpdateAll, "RaidFrame Visibility", cfg, "raidframe_visible", "checkbox")
         CreateConfig(UpdateAll, "RaidFrame Justification", cfg, "raidframe_justify", "dropdown", frameJustify)
+
+        CreateConfig(nil, "Tank Role Sync", cfg, "sync_enabled", "checkbox")
       end)
 
       guiRegistered = true
@@ -627,10 +425,10 @@ local function RegisterAddon()
     HookRaidPanel()
     RegisterGUI()
 
-    -- pfUI changes tankrole inside its own UnitPopup_OnClick post-hook. Do not
-    -- depend on recognising pfUI's menu button here: simply remember the popup
-    -- subject, wait one frame, and compare pfUI's actual resulting tankrole state.
-    -- This makes pfUI itself the source of truth for whether a tank toggle occurred.
+    -- pfUI changes tankrole from its UnitPopup_OnClick hook. Wait one frame so
+    -- every popup hook has finished, then compare the resulting tank state.
+    -- This is the only path that sends a TankIcons message.
+    local pendingToggle = {}
     local deferred = CreateFrame("Frame")
     deferred:Hide()
     deferred:SetScript("OnUpdate", function()
@@ -644,14 +442,13 @@ local function RegisterAddon()
           newState = IsTankName(name) and true or false
           observedTankState[name] = newState
           if oldState ~= newState then
-            DebugPrint("LOCAL tank change " .. tostring(name) .. "=" .. (newState and "1" or "0"))
-            BroadcastTankChange(name)
+            SendTankChange(name, newState)
           end
         end
       end
     end)
 
-    local function QueuePopupUpdate()
+    local function QueuePopupCheck()
       local dropdownFrame = getglobal(UIDROPDOWNMENU_INIT_MENU)
       local name = dropdownFrame and dropdownFrame.name
       if name and IsNameInGroup(name) then
@@ -661,37 +458,7 @@ local function RegisterAddon()
     end
 
     if UnitPopup_OnClick and hooksecurefunc then
-      hooksecurefunc("UnitPopup_OnClick", QueuePopupUpdate)
-    end
-
-    -- Hidden diagnostic command for comms testing. Registered at file load so
-    -- /pfti itself does not depend on reaching this point in pfUI module setup.
-    DiagnosticHandler = function(msg)
-      msg = string.lower(msg or "")
-      if msg == "debug" then
-        debugComms = not debugComms
-        DEFAULT_CHAT_FRAME:AddMessage("TankIcons comm debug " .. (debugComms and "ON" or "OFF"))
-      elseif msg == "status" then
-        DEFAULT_CHAT_FRAME:AddMessage("TankIcons v" .. ADDON_VERSION ..
-          " sync=" .. (SyncEnabled() and "on" or "off") ..
-          " channel=" .. tostring(CommChannel()) ..
-          " authority=" .. tostring(LocalAuthority()) ..
-          " leader=" .. tostring(GroupLeaderName()))
-      elseif msg == "request" then
-        RequestSync()
-      elseif msg == "ping" then
-        local channel = CommChannel()
-        if not channel then
-          DEFAULT_CHAT_FRAME:AddMessage("TankIcons PING blocked: not grouped")
-        elseif not SendAddonMessage then
-          DEFAULT_CHAT_FRAME:AddMessage("TankIcons PING blocked: SendAddonMessage unavailable")
-        else
-          DEFAULT_CHAT_FRAME:AddMessage("TankIcons PING SEND channel=" .. channel)
-          SendAddonMessage("PFTI", "PING", channel)
-        end
-      else
-        DEFAULT_CHAT_FRAME:AddMessage("TankIcons: /pfti status, debug, ping, request")
-      end
+      hooksecurefunc("UnitPopup_OnClick", QueuePopupCheck)
     end
 
     local events = CreateFrame("Frame")
@@ -703,26 +470,23 @@ local function RegisterAddon()
     events:RegisterEvent("CHAT_MSG_ADDON")
     events:SetScript("OnEvent", function()
       if event == "CHAT_MSG_ADDON" then
-        HandleComm(arg1, arg2, arg3, arg4)
+        if arg1 == COMM_PREFIX then
+          ApplyRemoteTankChange(arg4, arg2)
+        end
         return
       end
 
       HookRaidPanel()
       RegisterGUI()
-      UpdateAuthorityEpoch()
       UpdateAll()
-      RefreshObservedTankState()
 
-      if event == "PLAYER_ENTERING_WORLD" or event == "RAID_ROSTER_UPDATE" or
-         event == "PARTY_MEMBERS_CHANGED" then
-        RequestSync()
+      if event == "PLAYER_ENTERING_WORLD" or event == "RAID_ROSTER_UPDATE" or event == "PARTY_MEMBERS_CHANGED" then
+        RefreshObservedTankState()
       end
     end)
 
-    UpdateAuthorityEpoch()
     UpdateAll()
     RefreshObservedTankState()
-    RequestSync()
   end)
 end
 
