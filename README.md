@@ -1,21 +1,26 @@
-# pfUI_TankIcons 0.3.5
+# pfUI_TankIcons
 
-Displays pfUI tank-role assignments on the Blizzard Raid tab and pfUI group/raid frames.
+A small plugin for pfUI that displays a tank icon for players marked using pfUI's Toggle as Tank option.
 
-## Tank role sync
+## Features
+- Tank icons on Raid Tab, Group and Raid Frames.
+- Syncs tank assignments between pfUI_TankIcons users
+- Party leaders, raid leaders and raid assistants can globally toggle tanks
 
-This build deliberately uses a minimal Vanilla 1.12.1 comm path:
+## Configuration
 
-- No startup messages.
-- No sync requests.
-- No snapshots.
-- No retries.
-- No raw pipe characters in payloads.
-- A message is sent only after pfUI's tank role actually changes from the unit popup.
-- Party: only the party leader sends accepted changes.
-- Raid: raid leader and raid assistants send accepted changes.
-- Receivers independently verify the sender's current group authority.
+Settings can be found under:
 
-Wire format: prefix `PFTI`, payload `T:1:Name` or `T:0:Name`, channel `PARTY` or `RAID`.
+pfUI → Thirdparty → TankIcons
 
-Because there is intentionally no snapshot protocol yet, a player who joins/reloads after tank roles were assigned will only learn about later changes. Snapshot sync can be added after this minimal live-toggle path is proven stable.
+Each frame type can be enabled or disabled and the tank icon position can be adjusted.
+
+Tank role synchronisation can also be enabled or disabled.
+
+## Installation
+
+Copy pfUI_TankIcons into:
+
+Interface\AddOns\
+
+Requires pfUI.
