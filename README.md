@@ -8,27 +8,34 @@ A small standalone pfUI component for Vanilla WoW 1.12.1.
 - Shows a shield icon in the Blizzard Raid tab.
 - Shows a shield icon on pfUI group frames.
 - Shows a shield icon on pfUI raid frames.
+- Synchronises tank-role toggles between other users of pfUI_TankIcons.
 - Uses pfUI's own configuration database; no addon-specific SavedVariables.
-- Does not maintain a separate tank-role database.
 - Has no external addon or library dependencies.
+
+## Tank-role sync
+
+TankIcons never trusts authority claimed in an addon message. The sender name comes from WoW's `CHAT_MSG_ADDON` event and each receiving client validates that sender against its own live group roster.
+
+- Party: only the party leader may broadcast/apply tank changes.
+- Raid: raid leader and raid assistants may broadcast/apply tank changes.
+- Raid-leader direct changes outrank later raid-assistant changes for that player.
+- Normal members' local pfUI toggles are not broadcast.
+- Messages for players who are not in the receiver's current group are ignored.
+- On group/raid roster changes, clients request a baseline sync. In raids the raid leader is the snapshot authority; in parties the party leader is the snapshot authority.
+
+The wire protocol contains only version/action/state/name data. It contains no authority field.
 
 ## Options
 
 Available under **pfUI > Thirdparty > TankIcons**:
 
+- Tank Role Sync (default: enabled)
 - RaidTab Visibility
 - RaidTab Justification: Left / Centre / Right
 - GroupFrame Visibility
 - GroupFrame Justification: Top Left / Top / Top Right / Left / Centre / Right / Bottom Left / Bottom / Bottom Right
 - RaidFrame Visibility
 - RaidFrame Justification: Top Left / Top / Top Right / Left / Centre / Right / Bottom Left / Bottom / Bottom Right
-
-Defaults preserve the original v0.1.0 placement: all icons visible, RaidTab Right, GroupFrame Top Right, RaidFrame Top Right.
-
-### 0.2.3
-
-- Fixes group-frame icons when pfUI group frames were created before TankIcons installed its unitframe refresh hook.
-- Uses pfUI's stable `Group0`–`Group4` / `Raid1`–`Raid40` frame identities before compatibility fallbacks.
 
 ## Compatibility
 
@@ -48,14 +55,12 @@ The final path should be:
 
 `Interface\\AddOns\\pfUI_TankIcons\\pfUI_TankIcons.toc`
 
-## Version
+## Version 0.3.0
 
-0.2.3
-
-Tank markers on pfUI group/raid unitframes are rendered through a high-level child frame so they stay above health and power bars.
-
-### 0.2.3
-
-- Discover pfUI group/raid frames from `pfUI.uf.frames`.
-- Refresh tank icons one frame after the popup toggle so pfUI has finished updating `tankrole`.
-- No polling loop is used.
+- Adds authorised tank-role synchronisation over Vanilla 1.12 addon messages.
+- Hardcodes authority from the receiver's own party/raid roster; authority is never accepted from message payloads.
+- Party leader only in parties.
+- Raid leader + raid assistants in raids, with raid-leader direct changes taking precedence per player.
+- Adds a baseline sync request/snapshot on group changes.
+- Adds **Tank Role Sync** to the pfUI Thirdparty options.
+- Retains the v0.2.3 group-frame timing and high-frame-level icon fixes.

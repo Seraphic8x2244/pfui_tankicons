@@ -6,6 +6,8 @@ local MODULE = "tankicons"
 local ICON = "Interface\\Icons\\INV_Shield_06"
 local ICON_SIZE = 12
 local RAIDTAB_ICON_SIZE = 11
+local COMM_PREFIX = "PFTANKICONS"
+local COMM_VERSION = "1"
 
 local UNIT_POINTS = {
   TOPLEFT     = { "TOPLEFT",     1, -1 },
@@ -38,6 +40,7 @@ local function RegisterAddon()
     pfUI:UpdateConfig(MODULE, nil, "groupframe_justify", "TOPRIGHT")
     pfUI:UpdateConfig(MODULE, nil, "raidframe_visible", "1")
     pfUI:UpdateConfig(MODULE, nil, "raidframe_justify", "TOPRIGHT")
+    pfUI:UpdateConfig(MODULE, nil, "sync_enabled", "1")
   end
 
   pfUI:RegisterModule(MODULE, "vanilla", function()
@@ -46,6 +49,12 @@ local function RegisterAddon()
     local trackedCount = 0
     local raidPanelHooked = nil
     local guiRegistered = nil
+    local roleAuthority = {}
+    local roleState = {}
+    local currentLeader = nil
+    local lastSyncRequest = 0
+    local lastSnapshot = 0
+    local pendingToggle = {}
 
     local function Config()
       C[MODULE] = C[MODULE] or {}
@@ -61,6 +70,115 @@ local function RegisterAddon()
     local function IsTankName(name)
       local roles = TankRoles()
       return name and roles and roles[name] and true or false
+    end
+
+    local function SyncEnabled()
+      return Config().sync_enabled == "1"
+    end
+
+    local function RaidRankByName(name)
+      local i, rosterName, rank
+      if not name or GetNumRaidMembers() == 0 then return nil end
+      for i = 1, GetNumRaidMembers() do
+        rosterName, rank = GetRaidRosterInfo(i)
+        if rosterName == name then return rank or 0 end
+      end
+      return nil
+    end
+
+    local function PartyLeaderName()
+      local i, unit, name
+      if GetNumPartyMembers() == 0 then return nil end
+      if UnitIsPartyLeader("player") then return UnitName("player") end
+      for i = 1, GetNumPartyMembers() do
+        unit = "party" .. i
+        if UnitIsPartyLeader(unit) then
+          name = UnitName(unit)
+          if name then return name end
+        end
+      end
+      return nil
+    end
+
+    local function GroupLeaderName()
+      local i, name, rank
+      if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+          name, rank = GetRaidRosterInfo(i)
+          if name and rank == 2 then return name end
+        end
+        return nil
+      end
+      return PartyLeaderName()
+    end
+
+    local function SenderAuthority(sender)
+      local rank, leader
+      if not sender then return 0 end
+
+      if GetNumRaidMembers() > 0 then
+        rank = RaidRankByName(sender)
+        if rank == 2 then return 2 end
+        if rank == 1 then return 1 end
+        return 0
+      end
+
+      if GetNumPartyMembers() > 0 then
+        leader = PartyLeaderName()
+        if leader and sender == leader then return 1 end
+      end
+
+      return 0
+    end
+
+    local function LocalAuthority()
+      return SenderAuthority(UnitName("player"))
+    end
+
+    local function IsNameInGroup(name)
+      local i, rosterName
+      if not name then return nil end
+
+      if GetNumRaidMembers() > 0 then
+        return RaidRankByName(name) ~= nil
+      end
+
+      if UnitName("player") == name then return true end
+      for i = 1, GetNumPartyMembers() do
+        rosterName = UnitName("party" .. i)
+        if rosterName == name then return true end
+      end
+      return nil
+    end
+
+    local function CommChannel()
+      if GetNumRaidMembers() > 0 then return "RAID" end
+      if GetNumPartyMembers() > 0 then return "PARTY" end
+      return nil
+    end
+
+    local function SendComm(message)
+      local channel
+      if not SyncEnabled() or not SendAddonMessage then return end
+      channel = CommChannel()
+      if not channel then return end
+      SendAddonMessage(COMM_PREFIX, COMM_VERSION .. "|" .. message, channel)
+    end
+
+    local function SetTankRole(name, state)
+      local roles = TankRoles()
+      if not roles or not name then return end
+      if state then roles[name] = true else roles[name] = nil end
+      if pfUI.uf and pfUI.uf.raid then pfUI.uf.raid:Show() end
+    end
+
+    local function UpdateAuthorityEpoch()
+      local leader = GroupLeaderName()
+      if leader ~= currentLeader then
+        currentLeader = leader
+        roleAuthority = {}
+        roleState = {}
+      end
     end
 
     local function UnitFromFrame(frame)
@@ -239,6 +357,161 @@ local function RegisterAddon()
       UpdateRaidPanel()
     end
 
+    local function BroadcastTankChange(name)
+      local authority, state, lockedBy
+      if not SyncEnabled() or not name or not IsNameInGroup(name) then return end
+
+      UpdateAuthorityEpoch()
+      authority = LocalAuthority()
+      if authority == 0 then
+        -- pfUI itself permits a local toggle, but TankIcons never broadcasts it
+        -- from an unauthorised member. Ask the authority for a fresh baseline.
+        SendComm("REQ")
+        return
+      end
+
+      lockedBy = roleAuthority[name] or 0
+      if lockedBy > authority then
+        -- A raid-leader change for this player outranks a later assistant toggle.
+        SetTankRole(name, roleState[name])
+        UpdateAll()
+        return
+      end
+
+      state = IsTankName(name) and true or false
+      roleAuthority[name] = authority
+      roleState[name] = state
+      SendComm("T|" .. (state and "1" or "0") .. "|" .. name)
+    end
+
+    local function BuildTankSnapshot()
+      local tanks = {}
+      local count = 0
+      local i, name
+
+      if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+          name = GetRaidRosterInfo(i)
+          if name and IsTankName(name) then
+            count = count + 1
+            tanks[count] = name
+          end
+        end
+      else
+        name = UnitName("player")
+        if name and IsTankName(name) then count = count + 1; tanks[count] = name end
+        for i = 1, GetNumPartyMembers() do
+          name = UnitName("party" .. i)
+          if name and IsTankName(name) then
+            count = count + 1
+            tanks[count] = name
+          end
+        end
+      end
+
+      return table.concat(tanks, ",")
+    end
+
+    local function SendSnapshot()
+      local authority = LocalAuthority()
+      local now = GetTime()
+      if not SyncEnabled() or authority == 0 then return end
+
+      -- In raids the leader is the snapshot authority. Assistants still broadcast
+      -- live toggles, but do not compete with the leader during handshakes.
+      if GetNumRaidMembers() > 0 and authority ~= 2 then return end
+      if now - lastSnapshot < 2 then return end
+      lastSnapshot = now
+      SendComm("S|" .. BuildTankSnapshot())
+    end
+
+    local function ApplySnapshot(sender, list)
+      local authority = SenderAuthority(sender)
+      local present = {}
+      local name, i
+
+      if authority == 0 then return end
+      if GetNumRaidMembers() > 0 and authority ~= 2 then return end
+
+      if list and list ~= "" then
+        for name in string.gfind(list, "[^,]+") do
+          if IsNameInGroup(name) then present[name] = true end
+        end
+      end
+
+      -- A snapshot is a baseline, not a permanent leader lock. Direct leader
+      -- toggles after this point still outrank assistant toggles per player.
+      roleAuthority = {}
+      roleState = {}
+
+      if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+          name = GetRaidRosterInfo(i)
+          if name then SetTankRole(name, present[name] and true or false) end
+        end
+      else
+        name = UnitName("player")
+        if name then SetTankRole(name, present[name] and true or false) end
+        for i = 1, GetNumPartyMembers() do
+          name = UnitName("party" .. i)
+          if name then SetTankRole(name, present[name] and true or false) end
+        end
+      end
+
+      UpdateAll()
+    end
+
+    local function ApplyRemoteToggle(sender, state, name)
+      local authority, previous
+      if not name or not IsNameInGroup(name) then return end
+      authority = SenderAuthority(sender)
+      if authority == 0 then return end
+
+      UpdateAuthorityEpoch()
+      previous = roleAuthority[name] or 0
+      if authority < previous then return end
+
+      roleAuthority[name] = authority
+      roleState[name] = state
+      SetTankRole(name, state)
+      UpdateAll()
+    end
+
+    local function RequestSync()
+      local now = GetTime()
+      if not SyncEnabled() or not CommChannel() then return end
+      if now - lastSyncRequest < 2 then return end
+      lastSyncRequest = now
+      SendComm("REQ")
+    end
+
+    local function HandleComm(prefix, message, channel, sender)
+      local version, payload, state, name, list
+      if prefix ~= COMM_PREFIX or not SyncEnabled() or not message or not sender then return end
+      if not IsNameInGroup(sender) then return end
+
+      _, _, version, payload = string.find(message, "^([^|]+)|(.+)$")
+      if version ~= COMM_VERSION or not payload then return end
+
+      -- Any current group member may request the baseline. Authority is required
+      -- only for messages that actually change tank state.
+      if payload == "REQ" then
+        SendSnapshot()
+        return
+      end
+
+      _, _, state, name = string.find(payload, "^T|([01])|(.+)$")
+      if state and name then
+        ApplyRemoteToggle(sender, state == "1", name)
+        return
+      end
+
+      _, _, list = string.find(payload, "^S|(.*)$")
+      if list ~= nil then
+        ApplySnapshot(sender, list)
+      end
+    end
+
     local function RegisterGUI()
       if guiRegistered then return end
       if not pfUI.gui or not pfUI.gui.CreateGUIEntry or not pfUI.gui.CreateConfig then return end
@@ -266,6 +539,8 @@ local function RegisterAddon()
       }
 
       CreateGUIEntry("Thirdparty", "TankIcons", function()
+        CreateConfig(function() UpdateAll(); RequestSync() end, "Tank Role Sync", cfg, "sync_enabled", "checkbox")
+
         CreateConfig(UpdateAll, "RaidTab Visibility", cfg, "raidtab_visible", "checkbox")
         CreateConfig(UpdateAll, "RaidTab Justification", cfg, "raidtab_justify", "dropdown", raidTabJustify)
 
@@ -300,21 +575,34 @@ local function RegisterAddon()
     RegisterGUI()
 
     -- pfUI also post-hooks UnitPopup_OnClick to change tankrole. Depending on
-    -- module registration order, our post-hook can run before pfUI's tank hook.
-    -- Queue a one-frame, one-shot refresh so every popup hook has finished first.
+    -- module registration order, our hook can run before pfUI's tank hook.
+    -- Capture the target, then process it one frame later after pfUI has finished.
     local deferred = CreateFrame("Frame")
     deferred:Hide()
     deferred:SetScript("OnUpdate", function()
+      local name
       this:Hide()
       UpdateAll()
+      for name in pairs(pendingToggle) do
+        pendingToggle[name] = nil
+        BroadcastTankChange(name)
+      end
     end)
 
-    local function QueueUpdateAll()
+    local function QueuePopupUpdate()
+      local dropdownFrame = getglobal(UIDROPDOWNMENU_INIT_MENU)
+      local button = this and this.value
+      local name = dropdownFrame and dropdownFrame.name
+
+      if button and name and pfUI.uf and pfUI.uf.raid and
+         pfUI.uf.raid.tanksfirst and pfUI.uf.raid.tanksfirst[button] then
+        pendingToggle[name] = true
+      end
       deferred:Show()
     end
 
     if UnitPopup_OnClick and hooksecurefunc then
-      hooksecurefunc("UnitPopup_OnClick", QueueUpdateAll)
+      hooksecurefunc("UnitPopup_OnClick", QueuePopupUpdate)
     end
 
     local events = CreateFrame("Frame")
@@ -323,13 +611,27 @@ local function RegisterAddon()
     events:RegisterEvent("PARTY_MEMBERS_CHANGED")
     events:RegisterEvent("PLAYER_TARGET_CHANGED")
     events:RegisterEvent("ADDON_LOADED")
+    events:RegisterEvent("CHAT_MSG_ADDON")
     events:SetScript("OnEvent", function()
+      if event == "CHAT_MSG_ADDON" then
+        HandleComm(arg1, arg2, arg3, arg4)
+        return
+      end
+
       HookRaidPanel()
       RegisterGUI()
+      UpdateAuthorityEpoch()
       UpdateAll()
+
+      if event == "PLAYER_ENTERING_WORLD" or event == "RAID_ROSTER_UPDATE" or
+         event == "PARTY_MEMBERS_CHANGED" then
+        RequestSync()
+      end
     end)
 
+    UpdateAuthorityEpoch()
     UpdateAll()
+    RequestSync()
   end)
 end
 
