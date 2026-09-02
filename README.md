@@ -55,7 +55,7 @@ The final path should be:
 
 `Interface\\AddOns\\pfUI_TankIcons\\pfUI_TankIcons.toc`
 
-## Version 0.3.1
+## Version 0.3.2
 
 - Adds authorised tank-role synchronisation over Vanilla 1.12 addon messages.
 - Hardcodes authority from the receiver's own party/raid roster; authority is never accepted from message payloads.

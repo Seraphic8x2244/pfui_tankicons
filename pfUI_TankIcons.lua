@@ -8,7 +8,19 @@ local ICON_SIZE = 12
 local RAIDTAB_ICON_SIZE = 11
 local COMM_PREFIX = "PFTANKICONS"
 local COMM_VERSION = "1"
-local ADDON_VERSION = "0.3.1"
+local ADDON_VERSION = "0.3.2"
+
+-- Register the hidden diagnostic slash command immediately at addon load.
+-- The module installs its real handler once pfUI initialization completes.
+local DiagnosticHandler
+SLASH_PFTANKICONS1 = "/pfti"
+SlashCmdList["PFTANKICONS"] = function(msg)
+  if DiagnosticHandler then
+    DiagnosticHandler(msg)
+  elseif DEFAULT_CHAT_FRAME then
+    DEFAULT_CHAT_FRAME:AddMessage("TankIcons: module not initialized")
+  end
+end
 
 local UNIT_POINTS = {
   TOPLEFT     = { "TOPLEFT",     1, -1 },
@@ -649,21 +661,23 @@ local function RegisterAddon()
       hooksecurefunc("UnitPopup_OnClick", QueuePopupUpdate)
     end
 
-    -- Hidden diagnostic command for comms testing. Not advertised in the UI.
-    SLASH_PFTANKICONS1 = "/pfti"
-    SlashCmdList["PFTANKICONS"] = function(msg)
+    -- Hidden diagnostic command for comms testing. Registered at file load so
+    -- /pfti itself does not depend on reaching this point in pfUI module setup.
+    DiagnosticHandler = function(msg)
       msg = string.lower(msg or "")
       if msg == "debug" then
         debugComms = not debugComms
-        DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccTankIcons|r comm debug " .. (debugComms and "ON" or "OFF"))
+        DEFAULT_CHAT_FRAME:AddMessage("TankIcons comm debug " .. (debugComms and "ON" or "OFF"))
       elseif msg == "status" then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccTankIcons|r v" .. ADDON_VERSION ..
+        DEFAULT_CHAT_FRAME:AddMessage("TankIcons v" .. ADDON_VERSION ..
           " sync=" .. (SyncEnabled() and "on" or "off") ..
           " channel=" .. tostring(CommChannel()) ..
           " authority=" .. tostring(LocalAuthority()) ..
           " leader=" .. tostring(GroupLeaderName()))
       elseif msg == "request" then
         RequestSync()
+      else
+        DEFAULT_CHAT_FRAME:AddMessage("TankIcons: /pfti status | debug | request")
       end
     end
 
