@@ -8,6 +8,7 @@ local ICON_SIZE = 12
 local RAIDTAB_ICON_SIZE = 11
 local COMM_PREFIX = "PFTANKICONS"
 local COMM_VERSION = "1"
+local ADDON_VERSION = "0.3.1"
 
 local UNIT_POINTS = {
   TOPLEFT     = { "TOPLEFT",     1, -1 },
@@ -55,6 +56,8 @@ local function RegisterAddon()
     local lastSyncRequest = 0
     local lastSnapshot = 0
     local pendingToggle = {}
+    local observedTankState = {}
+    local debugComms = nil
 
     local function Config()
       C[MODULE] = C[MODULE] or {}
@@ -157,11 +160,24 @@ local function RegisterAddon()
       return nil
     end
 
+    local function DebugPrint(message)
+      if debugComms and DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccTankIcons|r " .. tostring(message))
+      end
+    end
+
     local function SendComm(message)
       local channel
-      if not SyncEnabled() or not SendAddonMessage then return end
+      if not SyncEnabled() or not SendAddonMessage then
+        DebugPrint("SEND blocked: sync/API unavailable")
+        return
+      end
       channel = CommChannel()
-      if not channel then return end
+      if not channel then
+        DebugPrint("SEND blocked: not grouped")
+        return
+      end
+      DebugPrint("SEND " .. channel .. " " .. message)
       SendAddonMessage(COMM_PREFIX, COMM_VERSION .. "|" .. message, channel)
     end
 
@@ -169,6 +185,7 @@ local function RegisterAddon()
       local roles = TankRoles()
       if not roles or not name then return end
       if state then roles[name] = true else roles[name] = nil end
+      observedTankState[name] = state and true or false
       if pfUI.uf and pfUI.uf.raid then pfUI.uf.raid:Show() end
     end
 
@@ -357,6 +374,23 @@ local function RegisterAddon()
       UpdateRaidPanel()
     end
 
+    local function RefreshObservedTankState()
+      local i, name
+      if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+          name = GetRaidRosterInfo(i)
+          if name then observedTankState[name] = IsTankName(name) and true or false end
+        end
+      else
+        name = UnitName("player")
+        if name then observedTankState[name] = IsTankName(name) and true or false end
+        for i = 1, GetNumPartyMembers() do
+          name = UnitName("party" .. i)
+          if name then observedTankState[name] = IsTankName(name) and true or false end
+        end
+      end
+    end
+
     local function BroadcastTankChange(name)
       local authority, state, lockedBy
       if not SyncEnabled() or not name or not IsNameInGroup(name) then return end
@@ -488,7 +522,11 @@ local function RegisterAddon()
     local function HandleComm(prefix, message, channel, sender)
       local version, payload, state, name, list
       if prefix ~= COMM_PREFIX or not SyncEnabled() or not message or not sender then return end
-      if not IsNameInGroup(sender) then return end
+      DebugPrint("RECV " .. tostring(channel) .. " from " .. tostring(sender) .. ": " .. tostring(message))
+      if not IsNameInGroup(sender) then
+        DebugPrint("REJECT sender not in group: " .. tostring(sender))
+        return
+      end
 
       _, _, version, payload = string.find(message, "^([^|]+)|(.+)$")
       if version ~= COMM_VERSION or not payload then return end
@@ -574,35 +612,59 @@ local function RegisterAddon()
     HookRaidPanel()
     RegisterGUI()
 
-    -- pfUI also post-hooks UnitPopup_OnClick to change tankrole. Depending on
-    -- module registration order, our hook can run before pfUI's tank hook.
-    -- Capture the target, then process it one frame later after pfUI has finished.
+    -- pfUI changes tankrole inside its own UnitPopup_OnClick post-hook. Do not
+    -- depend on recognising pfUI's menu button here: simply remember the popup
+    -- subject, wait one frame, and compare pfUI's actual resulting tankrole state.
+    -- This makes pfUI itself the source of truth for whether a tank toggle occurred.
     local deferred = CreateFrame("Frame")
     deferred:Hide()
     deferred:SetScript("OnUpdate", function()
-      local name
+      local name, oldState, newState
       this:Hide()
       UpdateAll()
       for name in pairs(pendingToggle) do
         pendingToggle[name] = nil
-        BroadcastTankChange(name)
+        if IsNameInGroup(name) then
+          oldState = observedTankState[name] and true or false
+          newState = IsTankName(name) and true or false
+          observedTankState[name] = newState
+          if oldState ~= newState then
+            DebugPrint("LOCAL tank change " .. tostring(name) .. "=" .. (newState and "1" or "0"))
+            BroadcastTankChange(name)
+          end
+        end
       end
     end)
 
     local function QueuePopupUpdate()
       local dropdownFrame = getglobal(UIDROPDOWNMENU_INIT_MENU)
-      local button = this and this.value
       local name = dropdownFrame and dropdownFrame.name
-
-      if button and name and pfUI.uf and pfUI.uf.raid and
-         pfUI.uf.raid.tanksfirst and pfUI.uf.raid.tanksfirst[button] then
+      if name and IsNameInGroup(name) then
         pendingToggle[name] = true
+        deferred:Show()
       end
-      deferred:Show()
     end
 
     if UnitPopup_OnClick and hooksecurefunc then
       hooksecurefunc("UnitPopup_OnClick", QueuePopupUpdate)
+    end
+
+    -- Hidden diagnostic command for comms testing. Not advertised in the UI.
+    SLASH_PFTANKICONS1 = "/pfti"
+    SlashCmdList["PFTANKICONS"] = function(msg)
+      msg = string.lower(msg or "")
+      if msg == "debug" then
+        debugComms = not debugComms
+        DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccTankIcons|r comm debug " .. (debugComms and "ON" or "OFF"))
+      elseif msg == "status" then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccTankIcons|r v" .. ADDON_VERSION ..
+          " sync=" .. (SyncEnabled() and "on" or "off") ..
+          " channel=" .. tostring(CommChannel()) ..
+          " authority=" .. tostring(LocalAuthority()) ..
+          " leader=" .. tostring(GroupLeaderName()))
+      elseif msg == "request" then
+        RequestSync()
+      end
     end
 
     local events = CreateFrame("Frame")
@@ -622,6 +684,7 @@ local function RegisterAddon()
       RegisterGUI()
       UpdateAuthorityEpoch()
       UpdateAll()
+      RefreshObservedTankState()
 
       if event == "PLAYER_ENTERING_WORLD" or event == "RAID_ROSTER_UPDATE" or
          event == "PARTY_MEMBERS_CHANGED" then
@@ -631,6 +694,7 @@ local function RegisterAddon()
 
     UpdateAuthorityEpoch()
     UpdateAll()
+    RefreshObservedTankState()
     RequestSync()
   end)
 end

@@ -55,7 +55,7 @@ The final path should be:
 
 `Interface\\AddOns\\pfUI_TankIcons\\pfUI_TankIcons.toc`
 
-## Version 0.3.0
+## Version 0.3.1
 
 - Adds authorised tank-role synchronisation over Vanilla 1.12 addon messages.
 - Hardcodes authority from the receiver's own party/raid roster; authority is never accepted from message payloads.
@@ -64,3 +64,8 @@ The final path should be:
 - Adds a baseline sync request/snapshot on group changes.
 - Adds **Tank Role Sync** to the pfUI Thirdparty options.
 - Retains the v0.2.3 group-frame timing and high-frame-level icon fixes.
+
+
+## Hidden diagnostics
+
+`/pfti status` shows sync channel/authority. `/pfti debug` toggles comm send/receive diagnostics. `/pfti request` requests a fresh snapshot.
