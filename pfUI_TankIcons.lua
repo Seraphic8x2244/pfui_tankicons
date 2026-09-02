@@ -6,9 +6,9 @@ local MODULE = "tankicons"
 local ICON = "Interface\\Icons\\INV_Shield_06"
 local ICON_SIZE = 12
 local RAIDTAB_ICON_SIZE = 11
-local COMM_PREFIX = "PFTANKICONS"
+local COMM_PREFIX = "PFTI"
 local COMM_VERSION = "1"
-local ADDON_VERSION = "0.3.2"
+local ADDON_VERSION = "0.3.4"
 
 -- Register the hidden diagnostic slash command immediately at addon load.
 -- The module installs its real handler once pfUI initialization completes.
@@ -174,7 +174,7 @@ local function RegisterAddon()
 
     local function DebugPrint(message)
       if debugComms and DEFAULT_CHAT_FRAME then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccTankIcons|r " .. tostring(message))
+        DEFAULT_CHAT_FRAME:AddMessage("TankIcons " .. tostring(message))
       end
     end
 
@@ -190,7 +190,7 @@ local function RegisterAddon()
         return
       end
       DebugPrint("SEND " .. channel .. " " .. message)
-      SendAddonMessage(COMM_PREFIX, COMM_VERSION .. "|" .. message, channel)
+      SendAddonMessage(COMM_PREFIX, "V" .. COMM_VERSION .. ":" .. message, channel)
     end
 
     local function SetTankRole(name, state)
@@ -427,7 +427,7 @@ local function RegisterAddon()
       state = IsTankName(name) and true or false
       roleAuthority[name] = authority
       roleState[name] = state
-      SendComm("T|" .. (state and "1" or "0") .. "|" .. name)
+      SendComm("T:" .. (state and "1" or "0") .. ":" .. name)
     end
 
     local function BuildTankSnapshot()
@@ -468,7 +468,7 @@ local function RegisterAddon()
       if GetNumRaidMembers() > 0 and authority ~= 2 then return end
       if now - lastSnapshot < 2 then return end
       lastSnapshot = now
-      SendComm("S|" .. BuildTankSnapshot())
+      SendComm("S:" .. BuildTankSnapshot())
     end
 
     local function ApplySnapshot(sender, list)
@@ -540,7 +540,10 @@ local function RegisterAddon()
         return
       end
 
-      _, _, version, payload = string.find(message, "^([^|]+)|(.+)$")
+      -- Keep the wire format deliberately limited to ordinary printable
+      -- characters. Raw pipe characters are chat escape introducers in the
+      -- Vanilla client and can upset other addons that inspect chat traffic.
+      _, _, version, payload = string.find(message, "^V([0-9]+):(.+)$")
       if version ~= COMM_VERSION or not payload then return end
 
       -- Any current group member may request the baseline. Authority is required
@@ -550,13 +553,13 @@ local function RegisterAddon()
         return
       end
 
-      _, _, state, name = string.find(payload, "^T|([01])|(.+)$")
+      _, _, state, name = string.find(payload, "^T:([01]):(.+)$")
       if state and name then
         ApplyRemoteToggle(sender, state == "1", name)
         return
       end
 
-      _, _, list = string.find(payload, "^S|(.*)$")
+      _, _, list = string.find(payload, "^S:(.*)$")
       if list ~= nil then
         ApplySnapshot(sender, list)
       end
@@ -676,8 +679,18 @@ local function RegisterAddon()
           " leader=" .. tostring(GroupLeaderName()))
       elseif msg == "request" then
         RequestSync()
+      elseif msg == "ping" then
+        local channel = CommChannel()
+        if not channel then
+          DEFAULT_CHAT_FRAME:AddMessage("TankIcons PING blocked: not grouped")
+        elseif not SendAddonMessage then
+          DEFAULT_CHAT_FRAME:AddMessage("TankIcons PING blocked: SendAddonMessage unavailable")
+        else
+          DEFAULT_CHAT_FRAME:AddMessage("TankIcons PING SEND channel=" .. channel)
+          SendAddonMessage("PFTI", "PING", channel)
+        end
       else
-        DEFAULT_CHAT_FRAME:AddMessage("TankIcons: /pfti status | debug | request")
+        DEFAULT_CHAT_FRAME:AddMessage("TankIcons: /pfti status, debug, ping, request")
       end
     end
 

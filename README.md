@@ -69,3 +69,10 @@ The final path should be:
 ## Hidden diagnostics
 
 `/pfti status` shows sync channel/authority. `/pfti debug` toggles comm send/receive diagnostics. `/pfti request` requests a fresh snapshot.
+
+
+## 0.3.4 communication fix
+
+The synchronization protocol now uses only plain chat-safe separators. Earlier 0.3.x builds used raw `|` characters in addon payloads; those builds are withdrawn because they could provoke `invalid escape code` errors in other addons on Vanilla clients.
+
+Wire messages are now `V1:REQ`, `V1:T:1:Name`, and `V1:S:Name1,Name2`.
