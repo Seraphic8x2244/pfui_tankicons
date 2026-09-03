@@ -7,7 +7,7 @@ local ICON = "Interface\\Icons\\INV_Shield_06"
 local ICON_SIZE = 12
 local RAIDTAB_ICON_SIZE = 11
 local COMM_PREFIX = "PFTI"
-local ADDON_VERSION = "0.3.5"
+local ADDON_VERSION = "0.3.6"
 
 local UNIT_POINTS = {
   TOPLEFT     = { "TOPLEFT",     1, -1 },
@@ -184,6 +184,51 @@ local function RegisterAddon()
           name = UnitName("party" .. i)
           if name then observedTankState[name] = IsTankName(name) end
         end
+      end
+    end
+
+    -- pfUI's tankrole table can also be changed directly by other addons.
+    -- There is no event for a raw Lua table write, so compare the current
+    -- group state against our last observed state at a light cadence.
+    local observedSeen = {}
+    local function CheckObservedTankState()
+      local i, name, oldState, newState
+
+      for name in pairs(observedSeen) do observedSeen[name] = nil end
+
+      local function CheckName(checkName)
+        if not checkName then return end
+        observedSeen[checkName] = true
+        newState = IsTankName(checkName) and true or false
+        oldState = observedTankState[checkName]
+
+        -- False is the natural baseline for a newly seen member. If another
+        -- addon has already marked that member as a tank before our first scan,
+        -- broadcast the true state rather than swallowing the change.
+        if oldState == nil then
+          observedTankState[checkName] = newState
+          if newState then SendTankChange(checkName, true) end
+        elseif oldState ~= newState then
+          observedTankState[checkName] = newState
+          SendTankChange(checkName, newState)
+        end
+      end
+
+      CheckName(UnitName("player"))
+      if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+          CheckName(UnitName("raid" .. i))
+        end
+      else
+        for i = 1, GetNumPartyMembers() do
+          CheckName(UnitName("party" .. i))
+        end
+      end
+
+      -- Forget players who have left so a later rejoin starts from a clean
+      -- baseline instead of looking like a tank-role change.
+      for name in pairs(observedTankState) do
+        if not observedSeen[name] then observedTankState[name] = nil end
       end
     end
 
@@ -425,41 +470,16 @@ local function RegisterAddon()
     HookRaidPanel()
     RegisterGUI()
 
-    -- pfUI changes tankrole from its UnitPopup_OnClick hook. Wait one frame so
-    -- every popup hook has finished, then compare the resulting tank state.
-    -- This is the only path that sends a TankIcons message.
-    local pendingToggle = {}
-    local deferred = CreateFrame("Frame")
-    deferred:Hide()
-    deferred:SetScript("OnUpdate", function()
-      local name, oldState, newState
-      this:Hide()
-      UpdateAll()
-      for name in pairs(pendingToggle) do
-        pendingToggle[name] = nil
-        if IsNameInGroup(name) then
-          oldState = observedTankState[name] and true or false
-          newState = IsTankName(name) and true or false
-          observedTankState[name] = newState
-          if oldState ~= newState then
-            SendTankChange(name, newState)
-          end
-        end
-      end
+    -- Watch for tank-role changes from any source: pfUI's menu, TankIcons,
+    -- SoloCraftBots, or another addon writing pfUI.uf.raid.tankrole directly.
+    local watcher = CreateFrame("Frame")
+    local watcherElapsed = 0
+    watcher:SetScript("OnUpdate", function()
+      watcherElapsed = watcherElapsed + arg1
+      if watcherElapsed < 0.20 then return end
+      watcherElapsed = 0
+      CheckObservedTankState()
     end)
-
-    local function QueuePopupCheck()
-      local dropdownFrame = getglobal(UIDROPDOWNMENU_INIT_MENU)
-      local name = dropdownFrame and dropdownFrame.name
-      if name and IsNameInGroup(name) then
-        pendingToggle[name] = true
-        deferred:Show()
-      end
-    end
-
-    if UnitPopup_OnClick and hooksecurefunc then
-      hooksecurefunc("UnitPopup_OnClick", QueuePopupCheck)
-    end
 
     local events = CreateFrame("Frame")
     events:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -480,7 +500,7 @@ local function RegisterAddon()
       RegisterGUI()
       UpdateAll()
 
-      if event == "PLAYER_ENTERING_WORLD" or event == "RAID_ROSTER_UPDATE" or event == "PARTY_MEMBERS_CHANGED" then
+      if event == "PLAYER_ENTERING_WORLD" then
         RefreshObservedTankState()
       end
     end)
