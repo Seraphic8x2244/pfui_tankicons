@@ -6,6 +6,7 @@
 - Goal: Refine the pfUI TankIcons options-page presentation while preserving existing behaviour.
 
 ## Recent Commits
+- `075b14f` — increase only the pfUI TankIcons page-title font by +2 px relative to pfUI's configured font size.
 - `43abaf0` — refine TankIcons options layout using native pfUI header/spacer widgets.
 - `33b7577` — record options layout refinement.
 - `6595c81` — migrate TankIcons naming, locales, and version metadata.
@@ -24,13 +25,14 @@
 - Updated development TOC metadata to `0.3.7-dev` and a `-dev` title.
 - Static migration review passed: locale loads first, GUI labels reference the locale table, no hardcoded `0.3.6` Lua version remains, and `dev` is based cleanly on `main`.
 - Options-page refinement implemented with pfUI's native `header` widget and `CreateConfig(nil)` spacers.
+- User confirmed the options layout looks good before the title-size adjustment.
 - Thirdparty entry remains `TankIcons`; page header displays `pfUI TankIcons`.
 - Sync option moved to the top and renamed to `Sync Tank Toggle with other pfUI_TankIcons users`.
 - Option groups now appear Group -> Raid -> Raid Tab, with one spacer between sections.
 
 ## Implemented / Awaiting Test
 - Entire `0.3.7-dev` migration and options-layout refinement are implemented and statically checked.
-- No in-game verification has yet been performed for the current build.
+- Page title now keeps pfUI's native header styling but uses only a +2 px font-size increase; this latest title-size change awaits in-game visual confirmation.
 
 ## Current Issues
 - None identified by static review.
@@ -72,4 +74,4 @@
 - `Debug.lua`; add only if a development need arises.
 
 ## Exact Next Step
-Install/run the current `0.3.7-dev` build in WoW 1.12.1 and verify the options page visually: Thirdparty entry `TankIcons`, page header `pfUI TankIcons`, sync first, then Group / Raid / Raid Tab pairs separated by one blank line. Also confirm icon display/justification still behaves normally.
+Reload the current `0.3.7-dev` build and confirm the `pfUI TankIcons` page title is appropriately larger without affecting any other option text. If it looks right, continue with the remaining icon display/justification migration test before release.
