@@ -437,17 +437,21 @@ local function RegisterAddon()
         "BOTTOMRIGHT:" .. L.BOTTOM_RIGHT,
       }
 
-      CreateGUIEntry("Thirdparty", L.ADDON_NAME, function()
-        CreateConfig(UpdateAll, L.RAIDTAB_VISIBILITY, cfg, "raidtab_visible", "checkbox")
-        CreateConfig(UpdateAll, L.RAIDTAB_JUSTIFICATION, cfg, "raidtab_justify", "dropdown", raidTabJustify)
+      CreateGUIEntry("Thirdparty", L.MENU_NAME, function()
+        CreateConfig(nil, L.ADDON_NAME, nil, nil, "header")
+        CreateConfig(nil, L.TANK_ROLE_SYNC, cfg, "sync_enabled", "checkbox")
 
+        CreateConfig(nil)
         CreateConfig(UpdateAll, L.GROUPFRAME_VISIBILITY, cfg, "groupframe_visible", "checkbox")
         CreateConfig(UpdateAll, L.GROUPFRAME_JUSTIFICATION, cfg, "groupframe_justify", "dropdown", frameJustify)
 
+        CreateConfig(nil)
         CreateConfig(UpdateAll, L.RAIDFRAME_VISIBILITY, cfg, "raidframe_visible", "checkbox")
         CreateConfig(UpdateAll, L.RAIDFRAME_JUSTIFICATION, cfg, "raidframe_justify", "dropdown", frameJustify)
 
-        CreateConfig(nil, L.TANK_ROLE_SYNC, cfg, "sync_enabled", "checkbox")
+        CreateConfig(nil)
+        CreateConfig(UpdateAll, L.RAIDTAB_VISIBILITY, cfg, "raidtab_visible", "checkbox")
+        CreateConfig(UpdateAll, L.RAIDTAB_JUSTIFICATION, cfg, "raidtab_justify", "dropdown", raidTabJustify)
       end)
 
       guiRegistered = true

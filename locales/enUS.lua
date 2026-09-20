@@ -3,6 +3,7 @@
 
 pfUI_TankIcons_L = {
   ADDON_NAME = "pfUI TankIcons",
+  MENU_NAME = "TankIcons",
 
   RAIDTAB_VISIBILITY = "Raid Tab Visibility",
   RAIDTAB_JUSTIFICATION = "Raid Tab Justification",
@@ -10,7 +11,7 @@ pfUI_TankIcons_L = {
   GROUPFRAME_JUSTIFICATION = "Group Frame Justification",
   RAIDFRAME_VISIBILITY = "Raid Frame Visibility",
   RAIDFRAME_JUSTIFICATION = "Raid Frame Justification",
-  TANK_ROLE_SYNC = "Tank Role Sync",
+  TANK_ROLE_SYNC = "Sync Tank Toggle with other pfUI_TankIcons users",
 
   LEFT = "Left",
   CENTRE = "Centre",

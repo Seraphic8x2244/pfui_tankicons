@@ -11,7 +11,7 @@ Noticed how you can toggle a tank in pfUI, but were never sure if it worked or w
 
 Settings can be found under:
 
-pfUI → Thirdparty → pfUI TankIcons
+pfUI → Thirdparty → TankIcons
 
 Each frame type can be enabled or disabled and the shield icon position can be adjusted.
 
