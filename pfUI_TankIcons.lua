@@ -1,13 +1,16 @@
--- pfUI_TankIcons
+-- pfUI TankIcons
 -- Displays pfUI's existing tank-role assignments on pfUI group/raid frames
 -- and on the Blizzard Raid tab. Vanilla 1.12.1 / Lua 5.0.
+
+local ADDON_NAME = "pfUI_TankIcons"
+local ADDON_VERSION = GetAddOnMetadata(ADDON_NAME, "Version")
+local L = pfUI_TankIcons_L
 
 local MODULE = "tankicons"
 local ICON = "Interface\\Icons\\INV_Shield_06"
 local ICON_SIZE = 12
 local RAIDTAB_ICON_SIZE = 11
 local COMM_PREFIX = "PFTI"
-local ADDON_VERSION = "0.3.6"
 
 local UNIT_POINTS = {
   TOPLEFT     = { "TOPLEFT",     1, -1 },
@@ -417,34 +420,34 @@ local function RegisterAddon()
       local cfg = Config()
 
       local raidTabJustify = {
-        "LEFT:Left",
-        "CENTER:Centre",
-        "RIGHT:Right",
+        "LEFT:" .. L.LEFT,
+        "CENTER:" .. L.CENTRE,
+        "RIGHT:" .. L.RIGHT,
       }
 
       local frameJustify = {
-        "TOPLEFT:Top Left",
-        "TOP:Top",
-        "TOPRIGHT:Top Right",
-        "LEFT:Left",
-        "CENTER:Centre",
-        "RIGHT:Right",
-        "BOTTOMLEFT:Bottom Left",
-        "BOTTOM:Bottom",
-        "BOTTOMRIGHT:Bottom Right",
+        "TOPLEFT:" .. L.TOP_LEFT,
+        "TOP:" .. L.TOP,
+        "TOPRIGHT:" .. L.TOP_RIGHT,
+        "LEFT:" .. L.LEFT,
+        "CENTER:" .. L.CENTRE,
+        "RIGHT:" .. L.RIGHT,
+        "BOTTOMLEFT:" .. L.BOTTOM_LEFT,
+        "BOTTOM:" .. L.BOTTOM,
+        "BOTTOMRIGHT:" .. L.BOTTOM_RIGHT,
       }
 
-      CreateGUIEntry("Thirdparty", "TankIcons", function()
-        CreateConfig(UpdateAll, "RaidTab Visibility", cfg, "raidtab_visible", "checkbox")
-        CreateConfig(UpdateAll, "RaidTab Justification", cfg, "raidtab_justify", "dropdown", raidTabJustify)
+      CreateGUIEntry("Thirdparty", L.ADDON_NAME, function()
+        CreateConfig(UpdateAll, L.RAIDTAB_VISIBILITY, cfg, "raidtab_visible", "checkbox")
+        CreateConfig(UpdateAll, L.RAIDTAB_JUSTIFICATION, cfg, "raidtab_justify", "dropdown", raidTabJustify)
 
-        CreateConfig(UpdateAll, "GroupFrame Visibility", cfg, "groupframe_visible", "checkbox")
-        CreateConfig(UpdateAll, "GroupFrame Justification", cfg, "groupframe_justify", "dropdown", frameJustify)
+        CreateConfig(UpdateAll, L.GROUPFRAME_VISIBILITY, cfg, "groupframe_visible", "checkbox")
+        CreateConfig(UpdateAll, L.GROUPFRAME_JUSTIFICATION, cfg, "groupframe_justify", "dropdown", frameJustify)
 
-        CreateConfig(UpdateAll, "RaidFrame Visibility", cfg, "raidframe_visible", "checkbox")
-        CreateConfig(UpdateAll, "RaidFrame Justification", cfg, "raidframe_justify", "dropdown", frameJustify)
+        CreateConfig(UpdateAll, L.RAIDFRAME_VISIBILITY, cfg, "raidframe_visible", "checkbox")
+        CreateConfig(UpdateAll, L.RAIDFRAME_JUSTIFICATION, cfg, "raidframe_justify", "dropdown", frameJustify)
 
-        CreateConfig(nil, "Tank Role Sync", cfg, "sync_enabled", "checkbox")
+        CreateConfig(nil, L.TANK_ROLE_SYNC, cfg, "sync_enabled", "checkbox")
       end)
 
       guiRegistered = true
