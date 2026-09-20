@@ -4,7 +4,8 @@
 - Branch: `dev`
 - Version: `0.3.7-dev`
 - Stable release: `0.3.7` on `main` at `9274af7`.
-- Goal: No active implementation work; stable `0.3.7` has been released.
+- Status: Complete.
+- Goal: No active implementation work. Revisit only if pfUI's tank-toggle behaviour changes or a new requirement is introduced.
 
 ## Recent Commits
 - `9274af7` (`main`) — release pfUI TankIcons `0.3.7`.
@@ -64,8 +65,7 @@
 - Sync behaviour is unchanged by this migration and only needs retesting if a regression is observed.
 
 ## Planned / To-do
-- None for `0.3.7`.
-- For the next development cycle, define scope first and bump `dev` to the next `-dev` version before implementation.
+- None.
 - If it passes, mark `0.3.7-dev` user tested.
 - Promote to stable `0.3.7` on `main` only after explicit user confirmation.
 
@@ -73,12 +73,13 @@
 - Additional locale translations can be added later if wanted.
 
 ## Deferred
+- Any future compatibility work required by changes to pfUI's tank-toggle implementation.
 - Tank assignment logic changes.
 - Communication protocol changes.
 - Frame discovery/compatibility fallback refactors.
 - SavedVariables changes.
 - Addon-owned artwork; none is currently needed.
-- `Debug.lua`; add only if a development need arises.
+- `Debug.lua`; add only if a future development need arises.
 
 ## Exact Next Step
-No release action remains. For future work, define the next change, bump `dev` to the next development version, and continue from this released `0.3.7` baseline.
+None. Project is complete at stable `0.3.7`. Reopen development only if pfUI changes tank-toggle behaviour or a new requirement is defined.
