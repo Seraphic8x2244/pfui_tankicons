@@ -32,7 +32,7 @@
 
 ## Implemented / Awaiting Test
 - Entire `0.3.7-dev` migration and options-layout refinement are implemented and statically checked.
-- Page title now keeps pfUI's native header styling but uses only a +2 px font-size increase; this latest title-size change awaits in-game visual confirmation.
+- Page title keeps pfUI's native header styling, uses a +2 px font-size increase, and is top-aligned so the header's remaining height becomes spacing below the title; this latest presentation change awaits in-game visual confirmation.
 
 ## Current Issues
 - None identified by static review.
@@ -74,4 +74,4 @@
 - `Debug.lua`; add only if a development need arises.
 
 ## Exact Next Step
-Reload the current `0.3.7-dev` build and confirm the `pfUI TankIcons` page title is appropriately larger without affecting any other option text. If it looks right, continue with the remaining icon display/justification migration test before release.
+Reload the current `0.3.7-dev` build and confirm the `pfUI TankIcons` page title is larger and top-aligned with comfortable space beneath it, without affecting any other option text. If it looks right, continue with the remaining icon display/justification migration test before release.

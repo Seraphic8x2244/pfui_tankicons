@@ -441,6 +441,7 @@ local function RegisterAddon()
         local title = CreateConfig(nil, L.ADDON_NAME, nil, nil, "header")
         if title and title.caption then
           title.caption:SetFont(pfUI.font_default, (tonumber(C.global.font_size) or 12) + 2)
+          title.caption:SetJustifyV("TOP")
         end
         CreateConfig(nil, L.TANK_ROLE_SYNC, cfg, "sync_enabled", "checkbox")
 
