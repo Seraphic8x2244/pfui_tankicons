@@ -3,7 +3,7 @@
 ## Current
 - Branch: `dev`
 - Version: `0.3.7-dev`
-- Goal: Refine the pfUI TankIcons options-page presentation while preserving existing behaviour.
+- Goal: Promote the user-approved current build to stable `0.3.7` on `main`.
 
 ## Recent Commits
 - `075b14f` — increase only the pfUI TankIcons page-title font by +2 px relative to pfUI's configured font size.
@@ -14,6 +14,7 @@
 - Stable baseline: `main` at `1ee31b3` / `0.3.6`.
 
 ## Completed / Verified
+- User explicitly confirmed the current `0.3.7-dev` build is stable and approved promotion to `main`.
 - Created `dev` from the known-good `0.3.6` main release.
 - Added `DEV_GUIDE.md` from VanillaTemplate unchanged.
 - Added and adopted `DEV_PROGRESS.md`.
@@ -74,4 +75,4 @@
 - `Debug.lua`; add only if a development need arises.
 
 ## Exact Next Step
-Reload the current `0.3.7-dev` build and confirm the `pfUI TankIcons` page title is larger and top-aligned with comfortable space beneath it, without affecting any other option text. If it looks right, continue with the remaining icon display/justification migration test before release.
+Promote the current `dev` code to `main` as stable `0.3.7`: remove `-dev` from TOC title/version, exclude `DEV_GUIDE.md` and `DEV_PROGRESS.md` from `main`, and record the resulting release commit here.
