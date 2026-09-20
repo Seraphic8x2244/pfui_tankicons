@@ -3,9 +3,12 @@
 ## Current
 - Branch: `dev`
 - Version: `0.3.7-dev`
-- Goal: Promote the user-approved current build to stable `0.3.7` on `main`.
+- Stable release: `0.3.7` on `main` at `9274af7`.
+- Goal: No active implementation work; stable `0.3.7` has been released.
 
 ## Recent Commits
+- `9274af7` (`main`) — release pfUI TankIcons `0.3.7`.
+- `838e7c7` (`dev`) — record `0.3.7` release approval.
 - `075b14f` — increase only the pfUI TankIcons page-title font by +2 px relative to pfUI's configured font size.
 - `43abaf0` — refine TankIcons options layout using native pfUI header/spacer widgets.
 - `33b7577` — record options layout refinement.
@@ -15,6 +18,8 @@
 
 ## Completed / Verified
 - User explicitly confirmed the current `0.3.7-dev` build is stable and approved promotion to `main`.
+- Stable `0.3.7` released to `main` at `9274af7`.
+- Release verification confirmed: stable TOC title/version, no `-dev` marker, dev-only docs absent from `main`, locale present, and final menu/title presentation code included.
 - Created `dev` from the known-good `0.3.6` main release.
 - Added `DEV_GUIDE.md` from VanillaTemplate unchanged.
 - Added and adopted `DEV_PROGRESS.md`.
@@ -59,7 +64,8 @@
 - Sync behaviour is unchanged by this migration and only needs retesting if a regression is observed.
 
 ## Planned / To-do
-- Run the in-game migration/options-layout test above.
+- None for `0.3.7`.
+- For the next development cycle, define scope first and bump `dev` to the next `-dev` version before implementation.
 - If it passes, mark `0.3.7-dev` user tested.
 - Promote to stable `0.3.7` on `main` only after explicit user confirmation.
 
@@ -75,4 +81,4 @@
 - `Debug.lua`; add only if a development need arises.
 
 ## Exact Next Step
-Promote the current `dev` code to `main` as stable `0.3.7`: remove `-dev` from TOC title/version, exclude `DEV_GUIDE.md` and `DEV_PROGRESS.md` from `main`, and record the resulting release commit here.
+No release action remains. For future work, define the next change, bump `dev` to the next development version, and continue from this released `0.3.7` baseline.
