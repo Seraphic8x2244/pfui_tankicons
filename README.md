@@ -1,11 +1,11 @@
-# pfUI_TankIcons
+# pfUI TankIcons
 
 Noticed how you can toggle a tank in pfUI, but were never sure if it worked or who was actually toggled? Me too.
 
 ## Features
 - When toggling a tank in pfUI, a shield icon will appear next to their name on Raid Tab, Group Frames and Raid Frames.
 - Party leaders, raid leaders and raid assistants can globally toggle tanks
-- Syncs tank assignments between pfUI_TankIcons users
+- Syncs tank assignments between pfUI TankIcons users
 
 ## Configuration
 
@@ -19,7 +19,7 @@ Tank role synchronisation can also be enabled or disabled.
 
 ## Installation
 
-Copy pfUI_TankIcons into:
+Copy `pfUI_TankIcons` into:
 
 Interface\AddOns\
 
