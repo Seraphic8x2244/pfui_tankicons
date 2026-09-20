@@ -3,7 +3,7 @@
 ## Current
 - Branch: `dev`
 - Version: `0.3.7-dev`
-- Goal: Complete and verify the VanillaTemplate workflow/localisation migration for pfUI TankIcons without changing tank assignment, sync, or frame behaviour.
+- Goal: Refine the pfUI TankIcons options-page presentation while preserving existing behaviour.
 
 ## Recent Commits
 - `6595c81` — migrate TankIcons naming, locales, and version metadata.
@@ -47,6 +47,7 @@
 - Sync behaviour is unchanged by this migration and only needs retesting if a regression is observed.
 
 ## Planned / To-do
+- Refine the options-page layout per the latest requested grouping/title order.
 - Run the in-game migration test above.
 - If it passes, mark `0.3.7-dev` user tested.
 - Promote to stable `0.3.7` on `main` only after explicit user confirmation.
@@ -63,4 +64,4 @@
 - `Debug.lua`; add only if a development need arises.
 
 ## Exact Next Step
-Install/run the current `dev` build in WoW 1.12.1 and perform the listed `0.3.7-dev` migration test. Do not promote to `main` until the user confirms the test result.
+Adjust the options layout on `dev`: add a small title, move sync to the top and rename it to `Sync Tank Toggle with other pfUI_TankIcons users`, then visually separate Group, Raid, and Raid Tab option pairs with one blank line between sections. Confirm the pfUI GUI API's supported heading/spacing mechanism before implementation.
