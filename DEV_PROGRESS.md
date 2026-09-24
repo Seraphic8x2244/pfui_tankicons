@@ -2,12 +2,12 @@
 
 ## Current
 - Branch: `dev`
-- Version: `0.3.7-dev`
-- Development head before this documentation-only migration: `f855a5cad94753f6868fc1947dc74632c2934de6`.
-- Handoff head: the current `dev` commit containing this file; its exact SHA is reported with the migration result because a commit cannot embed its own SHA.
+- Version: `0.3.7-dev` (current TOC state; bump to `0.3.8-dev` before runtime implementation of the performance rewrite).
+- Development head before this planning update: `be0e51f02f5590ac8df3409188d0a405cc4e0176`.
+- Handoff head: the current `dev` commit containing this file; its exact SHA is reported with the planning-update result because a commit cannot embed its own SHA.
 - Stable baseline: `0.3.7` on `main` at `9274af7e8e007b863fb8b148b6630004d6dc9e12`.
-- Goal: No active runtime implementation work. Keep the released `0.3.7` behaviour stable and reopen development only for a defined new requirement or pfUI compatibility change.
-- Current scope boundary: Documentation/workflow migration only; do not change addon runtime behaviour as part of this migration.
+- Goal: Replace the continuous 0.20-second tank-state watcher with event/action-driven synchronization and a one-shot 1-second roster resolver, preserving existing TankIcons behaviour and protocol semantics.
+- Current scope boundary: Design is agreed and documented. No runtime code has been changed yet for this rewrite.
 
 ## Current Design / Development Contract
 
@@ -15,6 +15,7 @@
 - Runtime is a small pfUI plugin: `locales/enUS.lua` loads before the single runtime file `pfUI_TankIcons.lua`.
 - Technical addon/folder identity remains `pfUI_TankIcons`; user-facing name is `pfUI TankIcons`.
 - Register as pfUI module `tankicons`; pfUI remains the authoritative owner of tank-role state through `pfUI.uf.raid.tankrole`.
+- TankIcons does not provide its own tank-assignment UI or competing tank-role state. It displays pfUI's state and communicates pfUI tank-toggle changes to other TankIcons users.
 - Store settings in pfUI's configuration database under the `tankicons` module. The addon owns no SavedVariables.
 - Discover pfUI group/raid unit frames primarily through `pfUI.uf.frames`; retain the `pfGroup*` / `pfRaid*` global-name fallbacks for older or forked pfUI builds.
 - Blizzard Raid-tab icons are attached to `RaidGroupButton1..40`; pfUI unit-frame icons use a child holder above the frame so pfUI child frames do not cover the marker.
@@ -23,10 +24,12 @@
 ### Invariants
 - TankIcons reflects and synchronizes pfUI's existing tank assignments; it must not introduce a competing tank-role state store or assignment system.
 - Preserve current group-frame, raid-frame and Blizzard Raid-tab icon visibility/justification behaviour unless a future requirement explicitly changes it.
-- Preserve optional tank-role sync semantics unless protocol work is explicitly in scope.
+- Preserve current `PFTI` communication format, authority checks, sync toggle, and remote-apply semantics during the performance rewrite.
 - Remote tank changes must be accepted only from an authoritative current group member and only for a current group member.
 - Raid authority is raid leader > raid assistant > ordinary member; party authority is party leader only.
-- The external tank-role watcher exists because raw writes to `pfUI.uf.raid.tankrole` have no event; its current 0.20-second observation cadence is product behaviour and must not be changed casually.
+- Local pfUI tank toggles and remote TankIcons sync changes should remain immediate; only roster-driven reconciliation is intentionally delayed/batched.
+- Roster batching must be a fixed one-second window, not a reset-on-every-event debounce: the first roster event queues one resolve for T+1s; additional roster events while that resolve is pending are absorbed without moving the deadline; an event after the resolve starts a new one-second window.
+- The rewrite should leave no permanent TankIcons `OnUpdate` polling loop. A temporary timer/resolver may use `OnUpdate` only while a roster resolve is pending, then disable itself after firing.
 - User-facing addon-owned strings remain localized through `pfUI_TankIcons_L`.
 - Version comes from `pfUI_TankIcons.toc` via `GetAddOnMetadata("pfUI_TankIcons", "Version")`.
 
@@ -37,7 +40,37 @@
 - Sync is controlled by pfUI config key `sync_enabled`.
 - Local sends require local authority and a target name currently in the group.
 - Remote receives require sync enabled, an authoritative sender, a valid payload, and a target name currently in the group.
-- Received changes mutate the authoritative `pfUI.uf.raid.tankrole` table and refresh displayed icons.
+- Received changes mutate the authoritative `pfUI.uf.raid.tankrole` table and refresh displayed icons immediately.
+
+### Performance Rewrite Design
+- Remove the continuous 0.20-second external tank-state polling machinery:
+  - `observedTankState`;
+  - `observedSeen`;
+  - `RefreshObservedTankState()`;
+  - `CheckObservedTankState()`;
+  - the permanent watcher frame/`OnUpdate` loop.
+- Local pfUI tank toggles become action-driven:
+  - detect the pfUI tank-toggle action;
+  - run after pfUI has changed `pfUI.uf.raid.tankrole[name]`;
+  - read the resulting boolean state directly;
+  - call the existing TankIcons send/update path immediately.
+- Remote TankIcons changes remain event-driven through `CHAT_MSG_ADDON` / `ApplyRemoteTankChange()`; no watcher is needed because TankIcons itself owns this mutation path.
+- `RAID_ROSTER_UPDATE` and `PARTY_MEMBERS_CHANGED` should no longer trigger repeated immediate reconciliation. They queue one roster resolve exactly one second after the first event in the current batch.
+- While that one-second resolver is pending, further roster events do not create another timer and do not push the existing deadline later.
+- When the resolver fires, perform one settled-state refresh/reconciliation using the then-current roster/state and disable the temporary timer.
+- If another roster event occurs after that resolver has fired (for example at T+1.1s), queue a new resolve for one second later (T+2.1s in that example).
+- `PLAYER_ENTERING_WORLD` remains an initialization concern; preserve correct initial icon/state population without reintroducing continuous polling.
+- Expected idle behaviour after the rewrite: no TankIcons frame-time polling. Work occurs only on actual tank-toggle actions, addon messages, initialization, relevant UI/frame refresh hooks, or a pending one-shot roster resolver.
+
+### Verified pfUI Integration Point
+- Upstream pfUI `shagu/pfUI` `modules/raid.lua` was inspected during planning (master blob `5aaca7c8fa5d89b79afeb8692b907ea1fc9d89ff`).
+- pfUI defines `PF_TANK_TOGGLE` in `pfUI.uf.raid.tanksfirst`.
+- pfUI installs a `hooksecurefunc("UnitPopup_OnClick", ...)` callback.
+- Inside that callback, when the clicked popup entry belongs to `pfUI.uf.raid.tanksfirst` and has a name, pfUI performs:
+  - `pfUI.uf.raid.tankrole[name] = not pfUI.uf.raid.tankrole[name]`;
+  - then `pfUI.uf.raid:Show()`.
+- The toggle is inline rather than exposed as a narrower named pfUI setter function.
+- Therefore the likely TankIcons integration is a later/post hook on the same popup action, but implementation must first verify pfUI module execution order and the Vanilla `hooksecurefunc` chaining/order semantics so TankIcons reliably observes the already-updated value rather than assuming hook order.
 
 ### Active Decisions
 - GUI remains under `pfUI -> Thirdparty -> TankIcons`.
@@ -45,13 +78,15 @@
 - Options remain ordered: sync first, then Group, Raid, and Raid Tab sections separated with native pfUI spacers.
 - Group/Raid frame justification supports the nine current anchor positions; Raid Tab supports left/centre/right.
 - Additional locale translations are optional future work, not current scope.
+- This rewrite is a performance/dispatch refactor, not a protocol redesign or UI redesign.
 
 ## Recent Relevant Commits
-- Current migration commit — adopt the current VanillaTemplate `dev_rulebook.md`, centralize live project state here, and remove `DEV_GUIDE.md`; documentation only.
+- Current planning commit — document the agreed event-driven performance rewrite and one-second roster batching model; documentation only.
+- `be0e51f` — migrate development workflow to the current VanillaTemplate rulebook.
 - `f855a5c` — mark pfUI TankIcons complete after the `0.3.7` release.
 - `9274af7` (`main`) — release stable `0.3.7`.
-- `838e7c7` — record user approval of the current `0.3.7-dev` build for release.
-- `980adba` — top-align the enlarged options-page title; this was the final runtime-changing dev commit before release approval.
+- `838e7c7` — record user approval of the final `0.3.7-dev` build for release.
+- `980adba` — final runtime-changing dev commit before `0.3.7` release approval.
 
 ## Completed / User-Verified
 - User explicitly confirmed the `0.3.7-dev` build at `980adba5a54264887caeb3aafa23d908fcb71a8b` as stable and approved promotion.
@@ -63,16 +98,17 @@
 - Existing tank icon rendering, justification, and synchronization behaviour was preserved through the `0.3.7` release.
 
 ## Implemented / Awaiting Runtime Test
-- None. This workflow migration changes documentation only.
+- None for the performance rewrite. It is design-only at this handoff.
 
 ## Static / Automated Checks
-- Prior `0.3.7` migration review confirmed locale load order, localized GUI labels, metadata-based version lookup, and clean derivation from the prior stable `0.3.6` baseline.
-- Stable release verification confirmed stable TOC title/version, no `-dev` marker on `main`, development status files absent from the release tree, locale present, and the final menu/title presentation code included.
-- This workflow migration was reviewed to ensure only development documentation changes: add `dev_rulebook.md`, rewrite `DEV_PROGRESS.md`, delete `DEV_GUIDE.md`.
+- Prior `0.3.7` migration/release checks confirmed locale load order, localized GUI labels, metadata-based version lookup, stable TOC metadata, development files absent from `main`, and final menu/title code present.
+- Workflow migration was documentation-only.
+- Performance-rewrite planning verified the actual upstream pfUI tank-toggle implementation in `modules/raid.lua`; implementation and runtime behaviour have not yet changed.
 
 ## Current Issues
-- None currently known.
-- Historical note removed from active status: the old progress file still named `0.3.6` as the "Last Test" even though later commit `838e7c7` explicitly records user approval of the final `0.3.7-dev` build. The explicit release approval is treated as the authoritative runtime state.
+- Continuous 0.20-second polling is unnecessary for the actual ownership model: pfUI owns local tank toggles, while TankIcons itself owns remote synchronized mutations. The watcher therefore performs permanent background work to rediscover state changes whose mutation paths can be observed directly.
+- The remaining implementation question is hook ordering/chaining: confirm TankIcons can attach to the pfUI popup-toggle path such that it reads the state after pfUI's inline toggle.
+- No known functional defect exists in stable `0.3.7`; this is a performance rewrite intended to reduce cumulative addon background machinery.
 
 ## Testing
 
@@ -80,31 +116,46 @@
 - Version/commit: `0.3.7-dev` at `980adba5a54264887caeb3aafa23d908fcb71a8b`.
 - Passed: User confirmed the current build stable and approved release.
 - Failed: None recorded.
-- Not tested: The documentation-only commits after `980adba` do not alter runtime behaviour; no separate runtime test is required for this migration.
+- Not tested: The planned performance rewrite has not been implemented.
 
 ### Next Runtime Test
-- None while the project remains complete.
-- If future runtime work begins, test only the new delta against stable `0.3.7`, plus any adjacent behavior that the change could affect.
+After the rewrite is implemented and statically checked, exercise the new `0.3.8-dev` delta in WoW 1.12.1:
+- login/reload with pfUI present: no Lua errors and icons initialize correctly;
+- local pfUI `Toggle as Tank` on/off: TankIcons sees the post-toggle state immediately, updates icons, and sends exactly the expected sync change;
+- remote TankIcons toggle message: authoritative remote changes apply immediately and update icons without any polling watcher;
+- non-authoritative/invalid remote messages remain rejected exactly as before;
+- burst several raid/party roster changes inside one second and confirm they produce one delayed resolver, not one refresh per event and not a sliding/resetting deadline;
+- trigger a new roster change after the previous resolver fires and confirm it schedules a fresh one-second resolver;
+- verify Group, Raid, and Raid Tab icon visibility/justification remain unchanged;
+- verify idle operation has no permanent TankIcons state-watcher `OnUpdate` loop.
 
 ## Planned / Next Work
-- None.
-- For a future development cycle, define the requested scope first and bump `dev` to the appropriate next `-dev` version before runtime implementation.
+- Verify the Vanilla/pfUI `hooksecurefunc` chaining and pfUI module execution order around `UnitPopup_OnClick`.
+- Choose the narrowest reliable post-toggle integration that observes pfUI's already-mutated `tankrole[name]` without modifying pfUI itself.
+- Bump `dev` TOC metadata to `0.3.8-dev` immediately before the runtime rewrite.
+- Remove the 0.20-second observed-state watcher machinery.
+- Route local pfUI toggle detection directly into the existing send/update path.
+- Keep `CHAT_MSG_ADDON` remote application immediate.
+- Replace immediate roster-event refresh churn with the agreed fixed-window one-second resolver.
+- Perform static Lua 5.0/API review, then the focused runtime test above.
 
 ## Deferred / Out of Scope
-- Compatibility changes required by future pfUI tank-toggle implementation changes.
+- Changes to pfUI itself or a pull request to pfUI.
 - Tank assignment logic changes.
-- Communication protocol changes.
-- Frame discovery or compatibility-fallback refactors.
+- Communication protocol redesign.
+- Changes to authority rules.
+- Frame discovery or compatibility-fallback refactors unrelated to the watcher removal.
 - SavedVariables changes.
 - Additional locale translations.
-- Addon-owned artwork; none is currently needed.
-- `Debug.lua`; add only if a concrete future development need arises.
+- Addon-owned artwork.
+- `Debug.lua` unless concrete instrumentation is needed during this rewrite.
 
 ## Release / Promotion Notes
-- Main-only or release-only content to preserve: stable TOC Title/Version metadata; `main` currently intentionally omits live development/status documentation.
+- Main-only or release-only content to preserve: stable TOC Title/Version metadata; `main` intentionally omits live development/status documentation.
 - Stable `main` baseline is `0.3.7` at `9274af7e8e007b863fb8b148b6630004d6dc9e12`.
 - Known validation debt accepted for release: None recorded.
 - External/runtime prerequisites: pfUI is required for functionality. The addon has no TOC dependency and safely remains inert when pfUI is unavailable.
+- Do not promote the performance rewrite until the focused `0.3.8-dev` runtime test is complete and the user explicitly accepts it.
 
 ## Exact Next Step
-None. The project is complete at stable `0.3.7`. Reopen development only when a concrete new requirement or pfUI compatibility change is defined; at that point verify the actual `dev` and `main` heads, define scope, and bump the development version before changing runtime code.
+Inspect pfUI's Vanilla `hooksecurefunc` implementation and module initialization/execution order to prove how a TankIcons hook on the `PF_TANK_TOGGLE` / `UnitPopup_OnClick` path can reliably run after pfUI's inline `tankrole[name]` mutation. Do not implement the rewrite until that ordering is established. Once established, bump the TOC to `0.3.8-dev` and implement the event-driven watcher removal plus fixed one-second roster resolver as one coherent runtime change.
