@@ -7,7 +7,7 @@
 - Handoff head: the current `dev` commit containing this file; its exact SHA is reported with the status-update result because a commit cannot embed its own SHA.
 - Stable baseline: `0.3.7` on `main` at `9274af7e8e007b863fb8b148b6630004d6dc9e12`.
 - Goal: Runtime-validate the completed event-driven performance rewrite against the stable `0.3.7` behaviour.
-- Current scope boundary: The rewrite is implemented and statically reviewed. It remains untested in WoW 1.12.1 and must not be promoted until the focused runtime test passes and the user explicitly accepts it.
+- Current scope boundary: The rewrite is implemented and statically checked, including a real Lua 5.0.2 compiler pass. It remains untested in WoW 1.12.1 and must not be promoted until the focused runtime test passes and the user explicitly accepts it.
 
 ## Current Design / Development Contract
 
@@ -82,7 +82,7 @@
 - This rewrite is a performance/dispatch refactor, not a protocol redesign or UI redesign.
 
 ## Recent Relevant Commits
-- Current status commit — record implementation/check state and the proven hook ordering; documentation only.
+- Current status commit — record the successful Lua 5.0.2 compiler pass; documentation only.
 - `594643f` — implement the `0.3.8-dev` event-driven rewrite: remove permanent state polling, hook pfUI tank toggles after pfUI, keep remote sync immediate, and batch roster refreshes in a fixed one-second window.
 - `d2b1e20` — document the agreed performance rewrite and one-second roster batching model; documentation only.
 - `be0e51f` — migrate development workflow to the current VanillaTemplate rulebook.
@@ -114,6 +114,7 @@
 - Implementation diff from `d2b1e20` to `594643f` changes only `pfUI_TankIcons.lua` and `pfUI_TankIcons.toc` (runtime: +55/-80 lines; TOC: version only).
 - Static source review confirms the old observed-state symbols/watcher are absent, `0.3.8-dev` metadata is present, the local toggle path is narrowed to `PF_TANK_TOGGLE`, and the only new TankIcons `OnUpdate` is the temporary roster resolver that removes its own script before resolving.
 - Lua 5.0/API compatibility was reviewed manually; no modern Lua syntax or new WoW API dependency was introduced.
+- VanillaTemplate's canonical `tools/lua50/check_lua50.sh` was run against the exact `594643f` TankIcons Lua inputs. The runtime blob `de460d539dcc6208b9b29e0066d18b1632534f1d` and locale blob `4795dd369b3d25db4161cc8260dcb6a4cd40b81c` were hash-verified before the check; GitHub Actions run `36006885763` / job `107657212356` completed successfully with `Lua 5.0.2 syntax check passed: 2 file(s).`
 - No in-game runtime claim is made by these checks.
 
 ## Current Issues
@@ -126,10 +127,10 @@
 - Version/commit: `0.3.7-dev` at `980adba5a54264887caeb3aafa23d908fcb71a8b`.
 - Passed: User confirmed the current build stable and approved release.
 - Failed: None recorded.
-- Not tested: The planned performance rewrite has not been implemented.
+- Not tested: The `0.3.8-dev` performance rewrite at `594643f8f5586817e8a7a98c5772f21f4c913d8e` has not yet been exercised in WoW 1.12.1.
 
 ### Next Runtime Test
-After the rewrite is implemented and statically checked, exercise the new `0.3.8-dev` delta in WoW 1.12.1:
+Exercise the statically checked `0.3.8-dev` delta in WoW 1.12.1:
 - login/reload with pfUI present: no Lua errors and icons initialize correctly;
 - local pfUI `Toggle as Tank` on/off: TankIcons sees the post-toggle state immediately, updates icons, and sends exactly the expected sync change;
 - remote TankIcons toggle message: authoritative remote changes apply immediately and update icons without any polling watcher;
