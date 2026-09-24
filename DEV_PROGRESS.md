@@ -119,15 +119,20 @@
 
 ## Current Issues
 - No known functional defect exists in stable `0.3.7`.
-- The `0.3.8-dev` rewrite is implemented but not yet runtime-tested. The remaining risk is behavioural integration in the real 1.12.1 client, especially popup-hook execution, exact sync send behaviour, and fixed-window roster batching.
+- The `0.3.8-dev` rewrite has a partial runtime pass. Manual pfUI tank toggling and group-frame display are working, with no reported failure so far. Remaining runtime risk is cross-client sync authority handling, 40-man/fixed-window roster batching, full raid/Raid Tab coverage, and continued idle observation.
 
 ## Testing
 
-### Last Runtime Test
+### Current Runtime Test
+- Version/commit: `0.3.8-dev` runtime at `594643f8f5586817e8a7a98c5772f21f4c913d8e`.
+- Passed so far: manual pfUI `Toggle as Tank` on/off updates the TankIcons group-frame marker immediately with no reported error; a SoloCraftBots-driven external tank-state change also appeared correctly on the group frame; current icon positioning appears unchanged.
+- Pending: two-client authoritative/non-authoritative sync validation; 40-man raid/roster burst validation of the fixed one-second resolver; continued idle/runtime observation; full Raid/Raid Tab confirmation during raid testing.
+- Failed: None reported so far.
+
+### Last Completed Runtime Test
 - Version/commit: `0.3.7-dev` at `980adba5a54264887caeb3aafa23d908fcb71a8b`.
 - Passed: User confirmed the current build stable and approved release.
 - Failed: None recorded.
-- Not tested: The `0.3.8-dev` performance rewrite at `594643f8f5586817e8a7a98c5772f21f4c913d8e` has not yet been exercised in WoW 1.12.1.
 
 ### Next Runtime Test
 Exercise the statically checked `0.3.8-dev` delta in WoW 1.12.1:
@@ -162,4 +167,4 @@ Exercise the statically checked `0.3.8-dev` delta in WoW 1.12.1:
 - Do not promote the performance rewrite until the focused `0.3.8-dev` runtime test is complete and the user explicitly accepts it.
 
 ## Exact Next Step
-Runtime-test `0.3.8-dev` at `594643f8f5586817e8a7a98c5772f21f4c913d8e` in WoW 1.12.1 using the existing focused checklist: verify local pfUI tank toggle on/off is observed immediately after pfUI's mutation and sends the expected sync change, remote authoritative sync remains immediate, invalid/non-authoritative messages remain rejected, roster bursts inside one second produce one fixed-deadline resolve, a later post-resolve roster event queues a fresh one-second window, icon behaviour is unchanged, and idle TankIcons has no permanent watcher `OnUpdate`. Do not promote until this exact runtime delta is user-tested and accepted.
+Continue the focused `0.3.8-dev` runtime test at `594643f8f5586817e8a7a98c5772f21f4c913d8e`: test authoritative two-client sync and non-authoritative rejection, then use a 40-man raid/roster-change burst to validate the fixed one-second resolver and a fresh post-resolve window. Confirm Raid/Raid Tab visuals and keep watching for idle/runtime errors. Do not promote until the remaining checks pass and the user explicitly accepts this exact runtime delta.
