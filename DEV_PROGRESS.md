@@ -128,8 +128,8 @@
 ## Current Issues
 - No known functional defect exists in stable `0.3.7`.
 - `0.3.8-dev` runtime testing found one regression: SoloCraftBots automatic tank marking still updated the local TankIcons group-frame icon, but the change was no longer broadcast to other TankIcons users because the rewrite only sent from pfUI's manual popup action.
-- `0.3.9-dev` implements the event-driven fix for that regression and has passed the real Lua 5.0.2 compiler gate, but the fix is not yet user-tested in game.
-- Remaining broader runtime validation also includes two-client authority handling, 40-man/fixed-window roster batching, full Raid/Raid Tab coverage, and continued idle observation.
+- `0.3.9-dev` implements the event-driven fix for that regression, has passed the real Lua 5.0.2 compiler gate, and has now passed the focused two-client regression retest for both SoloCraftBots automatic tank marking and manual pfUI tank toggles.
+- Remaining broader runtime validation is 40-man/fixed-window roster batching, full Raid/Raid Tab coverage, continued idle/error observation, and any remaining authority rejection spot-check.
 
 ## Testing
 
@@ -139,10 +139,12 @@
 - Failed: SoloCraftBots automatic tank marking did not broadcast the new tank state to other TankIcons users.
 - Pending from that test cycle: two-client authoritative/non-authoritative sync validation beyond the reproduced external-writer failure; 40-man raid/roster burst validation; continued idle/runtime observation; full Raid/Raid Tab confirmation.
 
-### Current Candidate Awaiting Retest
+### Current Candidate Runtime Test
 - Version/commit: `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017`.
 - Static result: real Lua 5.0.2 compiler pass succeeded.
-- Runtime status: untested after the external-writer broadcast fix.
+- Passed so far: SoloCraftBots automatic tank marking broadcasts correctly to other TankIcons clients again; manual pfUI tank toggles also broadcast correctly; local markers continue to update.
+- Pending: 40-man/fixed-window roster batching; Raid/Raid Tab coverage; continued idle/error observation; any remaining non-authoritative rejection spot-check if practical.
+- Failed: None reported on `0.3.9-dev` so far.
 
 ### Last Completed Runtime Test
 - Version/commit: `0.3.7-dev` at `980adba5a54264887caeb3aafa23d908fcb71a8b`.
@@ -150,19 +152,16 @@
 - Failed: None recorded.
 
 ### Next Runtime Test
-Exercise `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017` in WoW 1.12.1:
-- first reproduce the exact regression scenario: have SoloCraftBots automatically mark a tank and confirm the local icon still appears **and** another TankIcons client receives the tank state;
-- manually toggle the same or another member through pfUI and confirm there is one effective remote state change with no duplicate/flicker regression;
-- confirm authoritative remote TankIcons changes still apply immediately and do not echo back;
-- confirm non-authoritative/invalid remote messages remain rejected;
-- in the 40-man test, burst several roster changes inside one second and confirm they settle through one fixed-deadline resolve rather than a sliding/resetting debounce;
-- trigger another roster change after the previous resolver fires and confirm it schedules a fresh one-second window;
-- verify Group, Raid, and Raid Tab icon visibility/justification remain unchanged;
-- keep watching for Lua errors or unexpected idle activity.
+Continue `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017` in the 40-man environment:
+- burst several roster changes inside one second and confirm TankIcons settles cleanly after the fixed one-second batch rather than visibly refreshing/sliding with every event;
+- after that settles, make another roster change and confirm it resolves as a fresh one-second batch;
+- verify Raid-frame and Blizzard Raid-tab tank icons remain correct and positioned as before;
+- keep watching for Lua errors, stale markers, duplicate/flickering updates, or unexpected idle activity;
+- if convenient, retain one non-authoritative sync rejection spot-check before final acceptance.
 
 ## Planned / Next Work
-- Retest the SoloCraftBots automatic-tank broadcast regression first on `0.3.9-dev`.
-- Complete the remaining two-client and 40-man runtime checklist.
+- The SoloCraftBots automatic-tank broadcast regression retest has passed on `0.3.9-dev`.
+- Complete the remaining 40-man/raid runtime checklist.
 - If the complete runtime behaviour passes, record the exact tested commit and explicit user acceptance before preparing stable promotion.
 ## Deferred / Out of Scope
 - Changes to pfUI itself or a pull request to pfUI.
@@ -183,4 +182,4 @@ Exercise `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017` in WoW 1.12.1
 - Do not promote the performance rewrite until `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017` completes the focused runtime test and the user explicitly accepts it.
 
 ## Exact Next Step
-Update to `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017` and retest the exact SoloCraftBots regression first: let SoloCraftBots automatically mark a newly summoned tank, confirm the local TankIcons marker appears, and confirm another TankIcons client receives that automatic tank state. Then recheck manual pfUI toggling for no duplicate/flicker and continue the pending two-client authority plus 40-man fixed-window roster tests. Do not promote until this exact runtime candidate is user-tested and accepted.
+Continue runtime testing `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017` in the 40-man environment: validate fixed one-second roster batching across a burst and a later fresh roster change, verify Raid and Raid Tab markers/positioning, and keep watching for errors/stale/duplicate behaviour. The SoloCraftBots automatic broadcast and manual pfUI broadcast paths are now user-verified working. Do not promote until the remaining raid checks pass and this exact runtime candidate is explicitly accepted.
