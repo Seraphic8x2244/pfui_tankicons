@@ -2,12 +2,12 @@
 
 ## Current
 - Branch: `dev`
-- Version: `0.3.8-dev`.
-- Runtime implementation commit: `594643f8f5586817e8a7a98c5772f21f4c913d8e`.
+- Version: `0.3.9-dev`.
+- Runtime implementation commit: `0f73ffab2315cfde250a99266a5a020462a3b017`.
 - Handoff head: the current `dev` commit containing this file; its exact SHA is reported with the status-update result because a commit cannot embed its own SHA.
 - Stable baseline: `0.3.7` on `main` at `9274af7e8e007b863fb8b148b6630004d6dc9e12`.
-- Goal: Runtime-validate the completed event-driven performance rewrite against the stable `0.3.7` behaviour.
-- Current scope boundary: The rewrite is implemented and statically checked, including a real Lua 5.0.2 compiler pass. It remains untested in WoW 1.12.1 and must not be promoted until the focused runtime test passes and the user explicitly accepts it.
+- Goal: Runtime-validate the event-driven performance rewrite while preserving broadcast of pfUI tank-role changes made directly by other addons such as SoloCraftBots.
+- Current scope boundary: `0.3.9-dev` is implemented and statically checked, including a real Lua 5.0.2 compiler pass. The `0.3.8-dev` runtime test exposed a direct-writer broadcast regression; `0.3.9-dev` fixes that path without restoring permanent polling and now requires focused in-game retesting before any promotion.
 
 ## Current Design / Development Contract
 
@@ -44,23 +44,24 @@
 
 ### Performance Rewrite Design
 - Remove the continuous 0.20-second external tank-state polling machinery:
-  - `observedTankState`;
-  - `observedSeen`;
-  - `RefreshObservedTankState()`;
-  - `CheckObservedTankState()`;
-  - the permanent watcher frame/`OnUpdate` loop.
-- Local pfUI tank toggles become action-driven:
-  - detect the pfUI tank-toggle action;
-  - run after pfUI has changed `pfUI.uf.raid.tankrole[name]`;
-  - read the resulting boolean state directly;
-  - call the existing TankIcons send/update path immediately.
-- Remote TankIcons changes remain event-driven through `CHAT_MSG_ADDON` / `ApplyRemoteTankChange()`; no watcher is needed because TankIcons itself owns this mutation path.
-- `RAID_ROSTER_UPDATE` and `PARTY_MEMBERS_CHANGED` should no longer trigger repeated immediate reconciliation. They queue one roster resolve exactly one second after the first event in the current batch.
+  - no permanent watcher frame/`OnUpdate` loop;
+  - no periodic whole-roster `CheckObservedTankState()`;
+  - no `observedSeen` scratch table maintained on a frame-time cadence.
+- Retain only lightweight per-name `observedTankState` memory so supported direct writers of `pfUI.uf.raid.tankrole` can still be detected without polling.
+- Direct tank-table changes are observed only at existing action/event boundaries:
+  - pfUI `RefreshUnit` hooks call `UpdatePfUIFrame()`, which compares that frame member's current tank state against `observedTankState`;
+  - normal TankIcons `UpdateAll()` passes reuse the same tracked-frame comparison;
+  - a newly seen true state is broadcast because another addon may have marked the member before TankIcons first observed it;
+  - a newly seen false state is baseline only and is not broadcast.
+- Local pfUI tank toggles remain action-driven through the later `UnitPopup_OnClick` post-hook, but now use the same observation function as direct writers. This makes refresh-before-hook and hook-before-refresh both converge on exactly one send.
+- Remote TankIcons changes remain event-driven through `CHAT_MSG_ADDON` / `ApplyRemoteTankChange()`; the observed state is updated before `UpdateAll()` so accepted remote changes are not echoed back.
+- `RefreshObservedTankState()` is initialization-only, establishing a baseline at module start / `PLAYER_ENTERING_WORLD`; it is not a timer.
+- `PruneObservedTankState()` runs only in the already-batched roster resolver so departed names do not leave stale baselines.
+- `RAID_ROSTER_UPDATE` and `PARTY_MEMBERS_CHANGED` queue one roster resolve exactly one second after the first event in the current batch.
 - While that one-second resolver is pending, further roster events do not create another timer and do not push the existing deadline later.
-- When the resolver fires, perform one settled-state refresh/reconciliation using the then-current roster/state and disable the temporary timer.
+- When the resolver fires, prune departed observed names, perform one settled-state refresh/reconciliation, and disable the temporary timer.
 - If another roster event occurs after that resolver has fired (for example at T+1.1s), queue a new resolve for one second later (T+2.1s in that example).
-- `PLAYER_ENTERING_WORLD` remains an initialization concern; preserve correct initial icon/state population without reintroducing continuous polling.
-- Expected idle behaviour after the rewrite: no TankIcons frame-time polling. Work occurs only on actual tank-toggle actions, addon messages, initialization, relevant UI/frame refresh hooks, or a pending one-shot roster resolver.
+- Expected idle behaviour remains: no permanent TankIcons frame-time polling. Work occurs only on actual tank-toggle actions, addon messages, initialization, existing pfUI/UI refresh hooks, or a pending one-shot roster resolver.
 
 ### Verified pfUI Integration Point
 - Upstream Vanilla pfUI `shagu/pfUI` was inspected directly:
@@ -82,7 +83,9 @@
 - This rewrite is a performance/dispatch refactor, not a protocol redesign or UI redesign.
 
 ## Recent Relevant Commits
-- Current status commit — record the successful Lua 5.0.2 compiler pass; documentation only.
+- Current status commit — record the `0.3.8-dev` runtime regression, the `0.3.9-dev` direct-writer fix, compiler result, and focused retest gate; documentation only.
+- `0f73ffa` — bump to `0.3.9-dev` and restore external direct-writer broadcasting through event-driven per-name state observation on existing pfUI/TankIcons refresh boundaries, without restoring permanent polling.
+- `702d4a4` — record the partial `0.3.8-dev` runtime pass before the SoloCraftBots broadcast regression was identified; documentation only.
 - `594643f` — implement the `0.3.8-dev` event-driven rewrite: remove permanent state polling, hook pfUI tank toggles after pfUI, keep remote sync immediate, and batch roster refreshes in a fixed one-second window.
 - `d2b1e20` — document the agreed performance rewrite and one-second roster batching model; documentation only.
 - `be0e51f` — migrate development workflow to the current VanillaTemplate rulebook.
@@ -101,33 +104,45 @@
 - Existing tank icon rendering, justification, and synchronization behaviour was preserved through the `0.3.7` release.
 
 ## Implemented / Awaiting Runtime Test
-- `0.3.8-dev` at `594643f8f5586817e8a7a98c5772f21f4c913d8e` implements the performance rewrite.
-- Removed `observedTankState`, `observedSeen`, `RefreshObservedTankState()`, `CheckObservedTankState()`, and the permanent 0.20-second watcher `OnUpdate`.
-- Local `PF_TANK_TOGGLE` actions are observed through a later `UnitPopup_OnClick` post-hook; TankIcons reads pfUI's resulting state, sends through the existing authority/sync path, and refreshes icons immediately.
-- Remote `PFTI` changes remain immediate through `CHAT_MSG_ADDON` / `ApplyRemoteTankChange()`; the remote path directly mutates pfUI's authoritative `tankrole` table and refreshes icons.
-- `RAID_ROSTER_UPDATE` and `PARTY_MEMBERS_CHANGED` now queue a fixed one-second resolver from the first event in the batch. Later events while pending do not move the deadline.
-- The roster resolver installs `OnUpdate` only while pending, clears the script before performing the resolve, and can then be queued again by a later roster event.
+- `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017` contains the current runtime candidate.
+- The `0.3.8-dev` rewrite correctly removed the permanent 0.20-second watcher and retained immediate manual pfUI toggle handling, but runtime testing proved that another addon could still write `pfUI.uf.raid.tankrole[name]` directly, update the local icon, and bypass TankIcons' new send path.
+- SoloCraftBots `dev` was inspected: `SCB_MarkPfUITank(name)` writes `pfUI.uf.raid.tankrole[name] = true` directly. This exactly explains the observed regression.
+- `0.3.9-dev` restores only event-driven state memory:
+  - `ObserveTankState(name)` compares the current pfUI tank value to the last observed value and sends only on a real transition, or on a newly observed true value;
+  - `UpdatePfUIFrame()` invokes that observer when an existing pfUI unit-frame refresh exposes a direct mutation;
+  - manual `PF_TANK_TOGGLE` uses the same observer, preventing duplicate sends regardless of whether pfUI refreshes the frame before or after TankIcons' popup post-hook;
+  - accepted remote `PFTI` mutations update the observed value before refreshing, preventing echo;
+  - initialization snapshots current state once, and the fixed one-second roster resolver prunes departed names before refreshing.
+- The permanent watcher remains absent. The only TankIcons `OnUpdate` remains the temporary roster resolver while a one-second batch is pending.
 
 ## Static / Automated Checks
 - Prior `0.3.7` migration/release checks confirmed locale load order, localized GUI labels, metadata-based version lookup, stable TOC metadata, development files absent from `main`, and final menu/title code present.
 - Hook ordering was verified against both upstream Vanilla pfUI and the current brues pfUI + ClassicAPI implementation as documented above.
 - Implementation diff from `d2b1e20` to `594643f` changes only `pfUI_TankIcons.lua` and `pfUI_TankIcons.toc` (runtime: +55/-80 lines; TOC: version only).
-- Static source review confirms the old observed-state symbols/watcher are absent, `0.3.8-dev` metadata is present, the local toggle path is narrowed to `PF_TANK_TOGGLE`, and the only new TankIcons `OnUpdate` is the temporary roster resolver that removes its own script before resolving.
+- Static source review of `0.3.9-dev` confirms there is still no permanent watcher. `observedTankState` is now event-driven state memory only; the sole TankIcons `OnUpdate` remains the temporary roster resolver that removes its own script before resolving.
 - Lua 5.0/API compatibility was reviewed manually; no modern Lua syntax or new WoW API dependency was introduced.
-- VanillaTemplate's canonical `tools/lua50/check_lua50.sh` was run against the exact `594643f` TankIcons Lua inputs. The runtime blob `de460d539dcc6208b9b29e0066d18b1632534f1d` and locale blob `4795dd369b3d25db4161cc8260dcb6a4cd40b81c` were hash-verified before the check; GitHub Actions run `36006885763` / job `107657212356` completed successfully with `Lua 5.0.2 syntax check passed: 2 file(s).`
-- No in-game runtime claim is made by these checks.
+- Baseline `0.3.8-dev`: VanillaTemplate's canonical `tools/lua50/check_lua50.sh` was run against the exact `594643f` TankIcons Lua inputs. Runtime blob `de460d539dcc6208b9b29e0066d18b1632534f1d` and locale blob `4795dd369b3d25db4161cc8260dcb6a4cd40b81c` were hash-verified; Actions run `36006885763` / job `107657212356` passed.
+- Current `0.3.9-dev`: the same canonical checker was run against exact commit `0f73ffab2315cfde250a99266a5a020462a3b017`. Runtime blob `ee98b8c00463227d13f5a5515315a96d1cc082d4` and locale blob `4795dd369b3d25db4161cc8260dcb6a4cd40b81c` were hash-verified; Actions run `36041311931` / job `107773878217` completed successfully with `Lua 5.0.2 syntax check passed: 2 file(s).`
+- No in-game runtime claim is made for the `0.3.9-dev` fix by these static checks.
 
 ## Current Issues
 - No known functional defect exists in stable `0.3.7`.
-- The `0.3.8-dev` rewrite has a partial runtime pass. Manual pfUI tank toggling and group-frame display are working, with no reported failure so far. Remaining runtime risk is cross-client sync authority handling, 40-man/fixed-window roster batching, full raid/Raid Tab coverage, and continued idle observation.
+- `0.3.8-dev` runtime testing found one regression: SoloCraftBots automatic tank marking still updated the local TankIcons group-frame icon, but the change was no longer broadcast to other TankIcons users because the rewrite only sent from pfUI's manual popup action.
+- `0.3.9-dev` implements the event-driven fix for that regression and has passed the real Lua 5.0.2 compiler gate, but the fix is not yet user-tested in game.
+- Remaining broader runtime validation also includes two-client authority handling, 40-man/fixed-window roster batching, full Raid/Raid Tab coverage, and continued idle observation.
 
 ## Testing
 
-### Current Runtime Test
+### Latest Runtime Result
 - Version/commit: `0.3.8-dev` runtime at `594643f8f5586817e8a7a98c5772f21f4c913d8e`.
-- Passed so far: manual pfUI `Toggle as Tank` on/off updates the TankIcons group-frame marker immediately with no reported error; a SoloCraftBots-driven external tank-state change also appeared correctly on the group frame; current icon positioning appears unchanged.
-- Pending: two-client authoritative/non-authoritative sync validation; 40-man raid/roster burst validation of the fixed one-second resolver; continued idle/runtime observation; full Raid/Raid Tab confirmation during raid testing.
-- Failed: None reported so far.
+- Passed: manual pfUI `Toggle as Tank` on/off updated the TankIcons group-frame marker immediately; SoloCraftBots automatic tank marking updated the local group-frame marker; current icon positioning appeared unchanged.
+- Failed: SoloCraftBots automatic tank marking did not broadcast the new tank state to other TankIcons users.
+- Pending from that test cycle: two-client authoritative/non-authoritative sync validation beyond the reproduced external-writer failure; 40-man raid/roster burst validation; continued idle/runtime observation; full Raid/Raid Tab confirmation.
+
+### Current Candidate Awaiting Retest
+- Version/commit: `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017`.
+- Static result: real Lua 5.0.2 compiler pass succeeded.
+- Runtime status: untested after the external-writer broadcast fix.
 
 ### Last Completed Runtime Test
 - Version/commit: `0.3.7-dev` at `980adba5a54264887caeb3aafa23d908fcb71a8b`.
@@ -135,19 +150,20 @@
 - Failed: None recorded.
 
 ### Next Runtime Test
-Exercise the statically checked `0.3.8-dev` delta in WoW 1.12.1:
-- login/reload with pfUI present: no Lua errors and icons initialize correctly;
-- local pfUI `Toggle as Tank` on/off: TankIcons sees the post-toggle state immediately, updates icons, and sends exactly the expected sync change;
-- remote TankIcons toggle message: authoritative remote changes apply immediately and update icons without any polling watcher;
-- non-authoritative/invalid remote messages remain rejected exactly as before;
-- burst several raid/party roster changes inside one second and confirm they produce one delayed resolver, not one refresh per event and not a sliding/resetting deadline;
-- trigger a new roster change after the previous resolver fires and confirm it schedules a fresh one-second resolver;
+Exercise `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017` in WoW 1.12.1:
+- first reproduce the exact regression scenario: have SoloCraftBots automatically mark a tank and confirm the local icon still appears **and** another TankIcons client receives the tank state;
+- manually toggle the same or another member through pfUI and confirm there is one effective remote state change with no duplicate/flicker regression;
+- confirm authoritative remote TankIcons changes still apply immediately and do not echo back;
+- confirm non-authoritative/invalid remote messages remain rejected;
+- in the 40-man test, burst several roster changes inside one second and confirm they settle through one fixed-deadline resolve rather than a sliding/resetting debounce;
+- trigger another roster change after the previous resolver fires and confirm it schedules a fresh one-second window;
 - verify Group, Raid, and Raid Tab icon visibility/justification remain unchanged;
-- verify idle operation has no permanent TankIcons state-watcher `OnUpdate` loop.
+- keep watching for Lua errors or unexpected idle activity.
 
 ## Planned / Next Work
-- Run the documented focused `0.3.8-dev` runtime test.
-- If runtime behaviour passes, record the exact tested commit and user acceptance before preparing stable promotion.
+- Retest the SoloCraftBots automatic-tank broadcast regression first on `0.3.9-dev`.
+- Complete the remaining two-client and 40-man runtime checklist.
+- If the complete runtime behaviour passes, record the exact tested commit and explicit user acceptance before preparing stable promotion.
 ## Deferred / Out of Scope
 - Changes to pfUI itself or a pull request to pfUI.
 - Tank assignment logic changes.
@@ -164,7 +180,7 @@ Exercise the statically checked `0.3.8-dev` delta in WoW 1.12.1:
 - Stable `main` baseline is `0.3.7` at `9274af7e8e007b863fb8b148b6630004d6dc9e12`.
 - Known validation debt accepted for release: None recorded.
 - External/runtime prerequisites: pfUI is required for functionality. The addon has no TOC dependency and safely remains inert when pfUI is unavailable.
-- Do not promote the performance rewrite until the focused `0.3.8-dev` runtime test is complete and the user explicitly accepts it.
+- Do not promote the performance rewrite until `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017` completes the focused runtime test and the user explicitly accepts it.
 
 ## Exact Next Step
-Continue the focused `0.3.8-dev` runtime test at `594643f8f5586817e8a7a98c5772f21f4c913d8e`: test authoritative two-client sync and non-authoritative rejection, then use a 40-man raid/roster-change burst to validate the fixed one-second resolver and a fresh post-resolve window. Confirm Raid/Raid Tab visuals and keep watching for idle/runtime errors. Do not promote until the remaining checks pass and the user explicitly accepts this exact runtime delta.
+Update to `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017` and retest the exact SoloCraftBots regression first: let SoloCraftBots automatically mark a newly summoned tank, confirm the local TankIcons marker appears, and confirm another TankIcons client receives that automatic tank state. Then recheck manual pfUI toggling for no duplicate/flicker and continue the pending two-client authority plus 40-man fixed-window roster tests. Do not promote until this exact runtime candidate is user-tested and accepted.
