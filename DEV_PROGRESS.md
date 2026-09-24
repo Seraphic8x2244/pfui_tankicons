@@ -5,9 +5,9 @@
 - Version: `0.3.9-dev`.
 - Runtime implementation commit: `0f73ffab2315cfde250a99266a5a020462a3b017`.
 - Handoff head: the current `dev` commit containing this file; its exact SHA is reported with the status-update result because a commit cannot embed its own SHA.
-- Stable baseline: `0.3.7` on `main` at `9274af7e8e007b863fb8b148b6630004d6dc9e12`.
-- Goal: Runtime-validate the event-driven performance rewrite while preserving broadcast of pfUI tank-role changes made directly by other addons such as SoloCraftBots.
-- Current scope boundary: `0.3.9-dev` is implemented and statically checked, including a real Lua 5.0.2 compiler pass. The `0.3.8-dev` runtime test exposed a direct-writer broadcast regression; `0.3.9-dev` fixes that path without restoring permanent polling and now requires focused in-game retesting before any promotion.
+- Stable baseline: `0.3.9` on `main` at `d79144109bf01601096b8974e621747050f82541`.
+- Goal: Maintenance mode. Preserve the accepted `0.3.9` behaviour and address only concrete regressions, compatibility issues, or explicitly requested changes.
+- Current scope boundary: No active feature or refactor work is planned. The event-driven performance rewrite and direct-writer sync fix are released and user-verified. Future runtime work must start as a new numerically bumped dev build under the current rulebook.
 
 ## Current Design / Development Contract
 
@@ -83,7 +83,10 @@
 - This rewrite is a performance/dispatch refactor, not a protocol redesign or UI redesign.
 
 ## Recent Relevant Commits
-- Current status commit — record the `0.3.8-dev` runtime regression, the `0.3.9-dev` direct-writer fix, compiler result, and focused retest gate; documentation only.
+- Current status commit — return the project to maintenance mode after the accepted `0.3.9` release; documentation only.
+- `0c8ecdf` — fix and clarify the repository build-versioning rule; documentation only.
+- `d791441` (`main`) — release stable `0.3.9` using the exact accepted runtime blob and stable TOC metadata.
+- `a00ead4` — record full `0.3.9-dev` runtime validation pass before release; documentation only.
 - `0f73ffa` — bump to `0.3.9-dev` and restore external direct-writer broadcasting through event-driven per-name state observation on existing pfUI/TankIcons refresh boundaries, without restoring permanent polling.
 - `702d4a4` — record the partial `0.3.8-dev` runtime pass before the SoloCraftBots broadcast regression was identified; documentation only.
 - `594643f` — implement the `0.3.8-dev` event-driven rewrite: remove permanent state polling, hook pfUI tank toggles after pfUI, keep remote sync immediate, and batch roster refreshes in a fixed one-second window.
@@ -103,8 +106,9 @@
 - Options-page presentation was refined with pfUI native header/spacer widgets, sync-first ordering, Group -> Raid -> Raid Tab grouping, and the approved title sizing/alignment.
 - Existing tank icon rendering, justification, and synchronization behaviour was preserved through the `0.3.7` release.
 
-## Implemented / Awaiting Runtime Test
-- `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017` contains the current runtime candidate.
+## Released Runtime
+- `0.3.9` on `main` at `d79144109bf01601096b8974e621747050f82541` is the current stable release.
+- Its runtime Lua blob is exactly the user-tested `0.3.9-dev` runtime blob from `0f73ffab2315cfde250a99266a5a020462a3b017`; the release delta is stable TOC Title/Version metadata only.
 - The `0.3.8-dev` rewrite correctly removed the permanent 0.20-second watcher and retained immediate manual pfUI toggle handling, but runtime testing proved that another addon could still write `pfUI.uf.raid.tankrole[name]` directly, update the local icon, and bypass TankIcons' new send path.
 - SoloCraftBots `dev` was inspected: `SCB_MarkPfUITank(name)` writes `pfUI.uf.raid.tankrole[name] = true` directly. This exactly explains the observed regression.
 - `0.3.9-dev` restores only event-driven state memory:
@@ -129,7 +133,7 @@
 - No known functional defect exists in stable `0.3.7`.
 - `0.3.8-dev` runtime testing found one regression: SoloCraftBots automatic tank marking still updated the local TankIcons group-frame icon, but the change was no longer broadcast to other TankIcons users because the rewrite only sent from pfUI's manual popup action.
 - `0.3.9-dev` implements the event-driven fix for that regression, has passed the real Lua 5.0.2 compiler gate, and has now passed the focused two-client regression retest for both SoloCraftBots automatic tank marking and manual pfUI tank toggles.
-- Runtime validation is now complete on `0.3.9-dev`: automatic/manual comms, 40-man raid operation, Raid Tab display, and extended AQ40/Stratholme observation all passed with no reported regression.
+- No known functional defect is currently recorded for stable `0.3.9`. Automatic/manual comms, 40-man raid operation, Raid Tab display, and extended AQ40/Stratholme observation all passed before release.
 
 ## Testing
 
@@ -139,12 +143,12 @@
 - Failed: SoloCraftBots automatic tank marking did not broadcast the new tank state to other TankIcons users.
 - Pending from that test cycle: two-client authoritative/non-authoritative sync validation beyond the reproduced external-writer failure; 40-man raid/roster burst validation; continued idle/runtime observation; full Raid/Raid Tab confirmation.
 
-### Current Candidate Runtime Test
-- Version/commit: `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017`.
+### Released Runtime Test
+- Version/commit tested: `0.3.9-dev` runtime at `0f73ffab2315cfde250a99266a5a020462a3b017`; released unchanged as stable runtime in `0.3.9` at `d79144109bf01601096b8974e621747050f82541`.
 - Static result: real Lua 5.0.2 compiler pass succeeded.
 - Passed: SoloCraftBots automatic tank marking broadcasts correctly to other TankIcons clients; manual pfUI tank toggles broadcast correctly; local markers update correctly; 40-man raid operation works; Blizzard Raid Tab markers/positioning work; no other bad behaviour was observed during the remainder of AQ40 or during Stratholme.
-- Failed: None reported on `0.3.9-dev`.
-- Runtime status: focused validation is complete for this exact runtime candidate. Promotion still requires explicit user acceptance per the development contract.
+- Failed: None reported.
+- Acceptance: user explicitly authorized promotion to `main` and return to maintenance mode.
 
 ### Last Completed Runtime Test
 - Version/commit: `0.3.7-dev` at `980adba5a54264887caeb3aafa23d908fcb71a8b`.
@@ -152,12 +156,11 @@
 - Failed: None recorded.
 
 ### Next Runtime Test
-No further focused runtime test is currently required for `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017`. The tested candidate passed automatic/manual comms, 40-man raid operation, Raid Tab display, and extended AQ40/Stratholme observation with no reported bad behaviour. Await explicit user acceptance before stable promotion.
+None scheduled in maintenance mode. Any future runtime test should be scoped to the concrete maintenance change, with stable `0.3.9` at `d79144109bf01601096b8974e621747050f82541` as the known-good baseline.
 
 ## Planned / Next Work
-- The SoloCraftBots automatic-tank broadcast regression retest has passed on `0.3.9-dev`.
-- Runtime validation is complete for the exact `0.3.9-dev` candidate.
-- Await explicit user acceptance, then prepare stable `0.3.9` promotion to `main` while preserving main-only/release-only content.
+- Maintenance mode: no active development work is planned.
+- For a future bug, compatibility issue, or requested change: reproduce against stable `0.3.9`, define the narrow maintenance scope here, increment the numeric dev TOC version for the next runtime/testable build, and preserve current protocol/UI/performance invariants unless the requested change requires otherwise.
 ## Deferred / Out of Scope
 - Changes to pfUI itself or a pull request to pfUI.
 - Tank assignment logic changes.
@@ -171,10 +174,11 @@ No further focused runtime test is currently required for `0.3.9-dev` at `0f73ff
 
 ## Release / Promotion Notes
 - Main-only or release-only content to preserve: stable TOC Title/Version metadata; `main` intentionally omits live development/status documentation.
-- Stable `main` baseline is `0.3.7` at `9274af7e8e007b863fb8b148b6630004d6dc9e12`.
+- Stable `main` baseline is `0.3.9` at `d79144109bf01601096b8974e621747050f82541`.
+- Stable release contains only README, locale, runtime Lua, and stable TOC metadata; `DEV_PROGRESS.md` and `dev_rulebook.md` remain development-branch documentation.
 - Known validation debt accepted for release: None recorded.
 - External/runtime prerequisites: pfUI is required for functionality. The addon has no TOC dependency and safely remains inert when pfUI is unavailable.
-- Do not promote the performance rewrite until `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017` completes the focused runtime test and the user explicitly accepts it.
+- `0.3.9` was promoted only after the exact runtime candidate completed focused runtime validation and received explicit user acceptance.
 
 ## Exact Next Step
-Obtain explicit user acceptance of `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017`. Once accepted, prepare stable `0.3.9` promotion to `main`, preserving intended release-only/main-only content and excluding live development status files as required.
+Maintenance mode: no action until a concrete bug, compatibility issue, or requested change is reported. Resume from stable `0.3.9` at `d79144109bf01601096b8974e621747050f82541`, read this file and `dev_rulebook.md`, define the narrow maintenance delta, bump the numeric dev version for the next runtime build, and test normally before any future promotion.
