@@ -2,12 +2,12 @@
 
 ## Current
 - Branch: `dev`
-- Version: `0.3.7-dev` (current TOC state; bump to `0.3.8-dev` before runtime implementation of the performance rewrite).
-- Development head before this planning update: `be0e51f02f5590ac8df3409188d0a405cc4e0176`.
-- Handoff head: the current `dev` commit containing this file; its exact SHA is reported with the planning-update result because a commit cannot embed its own SHA.
+- Version: `0.3.8-dev`.
+- Runtime implementation commit: `594643f8f5586817e8a7a98c5772f21f4c913d8e`.
+- Handoff head: the current `dev` commit containing this file; its exact SHA is reported with the status-update result because a commit cannot embed its own SHA.
 - Stable baseline: `0.3.7` on `main` at `9274af7e8e007b863fb8b148b6630004d6dc9e12`.
-- Goal: Replace the continuous 0.20-second tank-state watcher with event/action-driven synchronization and a one-shot 1-second roster resolver, preserving existing TankIcons behaviour and protocol semantics.
-- Current scope boundary: Design is agreed and documented. No runtime code has been changed yet for this rewrite.
+- Goal: Runtime-validate the completed event-driven performance rewrite against the stable `0.3.7` behaviour.
+- Current scope boundary: The rewrite is implemented and statically reviewed. It remains untested in WoW 1.12.1 and must not be promoted until the focused runtime test passes and the user explicitly accepts it.
 
 ## Current Design / Development Contract
 
@@ -63,15 +63,16 @@
 - Expected idle behaviour after the rewrite: no TankIcons frame-time polling. Work occurs only on actual tank-toggle actions, addon messages, initialization, relevant UI/frame refresh hooks, or a pending one-shot roster resolver.
 
 ### Verified pfUI Integration Point
-- Upstream pfUI `shagu/pfUI` `modules/raid.lua` was inspected during planning (master blob `5aaca7c8fa5d89b79afeb8692b907ea1fc9d89ff`).
-- pfUI defines `PF_TANK_TOGGLE` in `pfUI.uf.raid.tanksfirst`.
-- pfUI installs a `hooksecurefunc("UnitPopup_OnClick", ...)` callback.
-- Inside that callback, when the clicked popup entry belongs to `pfUI.uf.raid.tanksfirst` and has a name, pfUI performs:
-  - `pfUI.uf.raid.tankrole[name] = not pfUI.uf.raid.tankrole[name]`;
-  - then `pfUI.uf.raid:Show()`.
-- The toggle is inline rather than exposed as a narrower named pfUI setter function.
-- Therefore the likely TankIcons integration is a later/post hook on the same popup action, but implementation must first verify pfUI module execution order and the Vanilla `hooksecurefunc` chaining/order semantics so TankIcons reliably observes the already-updated value rather than assuming hook order.
-
+- Upstream Vanilla pfUI `shagu/pfUI` was inspected directly:
+  - `compat/vanilla.lua` blob `abc817a5c4f51790b6fa1532ccf15f6afc22410a` implements `hooksecurefunc` by capturing the function currently installed in the target slot as `old`; without `prepend`, the wrapper calls `old` first and the new callback second.
+  - `modules/raid.lua` blob `5aaca7c8fa5d89b79afeb8692b907ea1fc9d89ff` installs its own `UnitPopup_OnClick` post-hook and mutates `pfUI.uf.raid.tankrole[name]` inline before returning.
+  - Therefore a later hook on the same global necessarily executes after pfUI's mutation: the later wrapper calls the already-wrapped pfUI function first, then TankIcons.
+- The current `brues-code/pfUI` / ClassicAPI path was also verified:
+  - `brues-code/pfUI` `modules/raid.lua` blob `f4022de63247f1da7475041042653a44d9fb6ae9` uses the same inline tank toggle and post-hook design.
+  - ClassicAPI `src/HookSecureFunc.cpp` blob `85e839eebaf63c538b704fb5a1f01aaeb7c4e510` implements the same chaining semantics: each hook captures the current function as `orig`, calls `orig` first, then invokes the new callback.
+  - `pfUI_ClassicAPI.toc` loads `pfUI.lua` before `init/modules.xml`; module files register callbacks while `pfUI.bootup` is true, and pfUI's `ADDON_LOADED` handler executes registered modules before clearing `bootup`. A module registered after boot is loaded immediately.
+- TankIcons therefore does not assume addon/event callback ordering. `HookTankToggle()` attaches only when `pfUI.uf.raid.tanksfirst` already exists. Module execution is synchronous, so if a separately executing TankIcons module can see that table, pfUI's raid module has completed and its hook is already installed. If TankIcons executes before the raid module, it does not hook; later event handling retries, with `PLAYER_ENTERING_WORLD` providing a guaranteed post-boot opportunity before the player can use the popup toggle.
+- This establishes the required ordering without modifying pfUI and without reintroducing polling.
 ### Active Decisions
 - GUI remains under `pfUI -> Thirdparty -> TankIcons`.
 - The page header remains `pfUI TankIcons`, uses pfUI's native header widget, is +2 px over the configured pfUI font size, and is top-aligned.
@@ -81,7 +82,9 @@
 - This rewrite is a performance/dispatch refactor, not a protocol redesign or UI redesign.
 
 ## Recent Relevant Commits
-- Current planning commit — document the agreed event-driven performance rewrite and one-second roster batching model; documentation only.
+- Current status commit — record implementation/check state and the proven hook ordering; documentation only.
+- `594643f` — implement the `0.3.8-dev` event-driven rewrite: remove permanent state polling, hook pfUI tank toggles after pfUI, keep remote sync immediate, and batch roster refreshes in a fixed one-second window.
+- `d2b1e20` — document the agreed performance rewrite and one-second roster batching model; documentation only.
 - `be0e51f` — migrate development workflow to the current VanillaTemplate rulebook.
 - `f855a5c` — mark pfUI TankIcons complete after the `0.3.7` release.
 - `9274af7` (`main`) — release stable `0.3.7`.
@@ -98,17 +101,24 @@
 - Existing tank icon rendering, justification, and synchronization behaviour was preserved through the `0.3.7` release.
 
 ## Implemented / Awaiting Runtime Test
-- None for the performance rewrite. It is design-only at this handoff.
+- `0.3.8-dev` at `594643f8f5586817e8a7a98c5772f21f4c913d8e` implements the performance rewrite.
+- Removed `observedTankState`, `observedSeen`, `RefreshObservedTankState()`, `CheckObservedTankState()`, and the permanent 0.20-second watcher `OnUpdate`.
+- Local `PF_TANK_TOGGLE` actions are observed through a later `UnitPopup_OnClick` post-hook; TankIcons reads pfUI's resulting state, sends through the existing authority/sync path, and refreshes icons immediately.
+- Remote `PFTI` changes remain immediate through `CHAT_MSG_ADDON` / `ApplyRemoteTankChange()`; the remote path directly mutates pfUI's authoritative `tankrole` table and refreshes icons.
+- `RAID_ROSTER_UPDATE` and `PARTY_MEMBERS_CHANGED` now queue a fixed one-second resolver from the first event in the batch. Later events while pending do not move the deadline.
+- The roster resolver installs `OnUpdate` only while pending, clears the script before performing the resolve, and can then be queued again by a later roster event.
 
 ## Static / Automated Checks
 - Prior `0.3.7` migration/release checks confirmed locale load order, localized GUI labels, metadata-based version lookup, stable TOC metadata, development files absent from `main`, and final menu/title code present.
-- Workflow migration was documentation-only.
-- Performance-rewrite planning verified the actual upstream pfUI tank-toggle implementation in `modules/raid.lua`; implementation and runtime behaviour have not yet changed.
+- Hook ordering was verified against both upstream Vanilla pfUI and the current brues pfUI + ClassicAPI implementation as documented above.
+- Implementation diff from `d2b1e20` to `594643f` changes only `pfUI_TankIcons.lua` and `pfUI_TankIcons.toc` (runtime: +55/-80 lines; TOC: version only).
+- Static source review confirms the old observed-state symbols/watcher are absent, `0.3.8-dev` metadata is present, the local toggle path is narrowed to `PF_TANK_TOGGLE`, and the only new TankIcons `OnUpdate` is the temporary roster resolver that removes its own script before resolving.
+- Lua 5.0/API compatibility was reviewed manually; no modern Lua syntax or new WoW API dependency was introduced.
+- No in-game runtime claim is made by these checks.
 
 ## Current Issues
-- Continuous 0.20-second polling is unnecessary for the actual ownership model: pfUI owns local tank toggles, while TankIcons itself owns remote synchronized mutations. The watcher therefore performs permanent background work to rediscover state changes whose mutation paths can be observed directly.
-- The remaining implementation question is hook ordering/chaining: confirm TankIcons can attach to the pfUI popup-toggle path such that it reads the state after pfUI's inline toggle.
-- No known functional defect exists in stable `0.3.7`; this is a performance rewrite intended to reduce cumulative addon background machinery.
+- No known functional defect exists in stable `0.3.7`.
+- The `0.3.8-dev` rewrite is implemented but not yet runtime-tested. The remaining risk is behavioural integration in the real 1.12.1 client, especially popup-hook execution, exact sync send behaviour, and fixed-window roster batching.
 
 ## Testing
 
@@ -130,15 +140,8 @@ After the rewrite is implemented and statically checked, exercise the new `0.3.8
 - verify idle operation has no permanent TankIcons state-watcher `OnUpdate` loop.
 
 ## Planned / Next Work
-- Verify the Vanilla/pfUI `hooksecurefunc` chaining and pfUI module execution order around `UnitPopup_OnClick`.
-- Choose the narrowest reliable post-toggle integration that observes pfUI's already-mutated `tankrole[name]` without modifying pfUI itself.
-- Bump `dev` TOC metadata to `0.3.8-dev` immediately before the runtime rewrite.
-- Remove the 0.20-second observed-state watcher machinery.
-- Route local pfUI toggle detection directly into the existing send/update path.
-- Keep `CHAT_MSG_ADDON` remote application immediate.
-- Replace immediate roster-event refresh churn with the agreed fixed-window one-second resolver.
-- Perform static Lua 5.0/API review, then the focused runtime test above.
-
+- Run the documented focused `0.3.8-dev` runtime test.
+- If runtime behaviour passes, record the exact tested commit and user acceptance before preparing stable promotion.
 ## Deferred / Out of Scope
 - Changes to pfUI itself or a pull request to pfUI.
 - Tank assignment logic changes.
@@ -158,4 +161,4 @@ After the rewrite is implemented and statically checked, exercise the new `0.3.8
 - Do not promote the performance rewrite until the focused `0.3.8-dev` runtime test is complete and the user explicitly accepts it.
 
 ## Exact Next Step
-Inspect pfUI's Vanilla `hooksecurefunc` implementation and module initialization/execution order to prove how a TankIcons hook on the `PF_TANK_TOGGLE` / `UnitPopup_OnClick` path can reliably run after pfUI's inline `tankrole[name]` mutation. Do not implement the rewrite until that ordering is established. Once established, bump the TOC to `0.3.8-dev` and implement the event-driven watcher removal plus fixed one-second roster resolver as one coherent runtime change.
+Runtime-test `0.3.8-dev` at `594643f8f5586817e8a7a98c5772f21f4c913d8e` in WoW 1.12.1 using the existing focused checklist: verify local pfUI tank toggle on/off is observed immediately after pfUI's mutation and sends the expected sync change, remote authoritative sync remains immediate, invalid/non-authoritative messages remain rejected, roster bursts inside one second produce one fixed-deadline resolve, a later post-resolve roster event queues a fresh one-second window, icon behaviour is unchanged, and idle TankIcons has no permanent watcher `OnUpdate`. Do not promote until this exact runtime delta is user-tested and accepted.
