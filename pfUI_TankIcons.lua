@@ -54,6 +54,7 @@ local function RegisterAddon()
     local guiRegistered = nil
     local tankToggleHooked = nil
     local rosterResolveAt = nil
+    local observedTankState = {}
     local UpdateAll
 
     local function Config()
@@ -154,6 +155,70 @@ local function RegisterAddon()
       SendAddonMessage(COMM_PREFIX, "T:" .. (enabled and "1" or "0") .. ":" .. name, channel)
     end
 
+    -- Remember tank state without polling. Existing pfUI unit-frame refreshes
+    -- provide the observation boundary for direct table writers such as
+    -- SoloCraftBots; explicit TankIcons paths update the same memory directly.
+    local function ObserveTankState(name)
+      local oldState, newState
+      if not name or not IsNameInGroup(name) then return end
+
+      newState = IsTankName(name) and true or false
+      oldState = observedTankState[name]
+      observedTankState[name] = newState
+
+      -- A newly seen non-tank is only a baseline. A newly seen tank may have
+      -- been marked directly by another addon before TankIcons observed it.
+      if oldState == nil then
+        if newState then SendTankChange(name, true) end
+      elseif oldState ~= newState then
+        SendTankChange(name, newState)
+      end
+    end
+
+    local function RefreshObservedTankState()
+      local i, name
+      observedTankState = {}
+
+      name = UnitName("player")
+      if name then observedTankState[name] = IsTankName(name) end
+
+      if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+          name = UnitName("raid" .. i)
+          if name then observedTankState[name] = IsTankName(name) end
+        end
+      else
+        for i = 1, GetNumPartyMembers() do
+          name = UnitName("party" .. i)
+          if name then observedTankState[name] = IsTankName(name) end
+        end
+      end
+    end
+
+    local function PruneObservedTankState()
+      local i, name
+      local seen = {}
+
+      name = UnitName("player")
+      if name then seen[name] = true end
+
+      if GetNumRaidMembers() > 0 then
+        for i = 1, GetNumRaidMembers() do
+          name = UnitName("raid" .. i)
+          if name then seen[name] = true end
+        end
+      else
+        for i = 1, GetNumPartyMembers() do
+          name = UnitName("party" .. i)
+          if name then seen[name] = true end
+        end
+      end
+
+      for name in pairs(observedTankState) do
+        if not seen[name] then observedTankState[name] = nil end
+      end
+    end
+
     local function ApplyRemoteTankChange(sender, message)
       local flag, name, roles
       if not SyncEnabled() then return end
@@ -168,6 +233,7 @@ local function RegisterAddon()
       else
         roles[name] = nil
       end
+      observedTankState[name] = flag == "1"
       UpdateAll()
     end
 
@@ -264,6 +330,7 @@ local function RegisterAddon()
 
       local unit = UnitFromFrame(frame)
       local name = unit and UnitName(unit)
+      if name then ObserveTankState(name) end
 
       if visible and IsTankName(name) then
         frame.pfTankIcon:Show()
@@ -362,8 +429,7 @@ local function RegisterAddon()
         local button = this.value
         local name = dropdownFrame.name
         if button == "PF_TANK_TOGGLE" and pfUI.uf.raid.tanksfirst[button] and name then
-          local enabled = IsTankName(name)
-          SendTankChange(name, enabled)
+          ObserveTankState(name)
           UpdateAll()
         end
       end)
@@ -453,6 +519,7 @@ local function RegisterAddon()
       HookRaidPanel()
       RegisterGUI()
       HookTankToggle()
+      PruneObservedTankState()
       UpdateAll()
     end
 
@@ -489,9 +556,14 @@ local function RegisterAddon()
         return
       end
 
+      if event == "PLAYER_ENTERING_WORLD" then
+        RefreshObservedTankState()
+      end
+
       UpdateAll()
     end)
 
+    RefreshObservedTankState()
     UpdateAll()
   end)
 end

@@ -2,7 +2,7 @@
 ## Title: |cff33ffccpf|cffffffffUI|r TankIcons-dev
 ## Notes: Displays pfUI tank assignments on group/raid frames and the Blizzard Raid tab.
 ## Author: Seraphic8x2244
-## Version: 0.3.8-dev
+## Version: 0.3.9-dev
 
 locales\enUS.lua
 pfUI_TankIcons.lua
