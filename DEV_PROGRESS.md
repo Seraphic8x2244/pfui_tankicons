@@ -129,7 +129,7 @@
 - No known functional defect exists in stable `0.3.7`.
 - `0.3.8-dev` runtime testing found one regression: SoloCraftBots automatic tank marking still updated the local TankIcons group-frame icon, but the change was no longer broadcast to other TankIcons users because the rewrite only sent from pfUI's manual popup action.
 - `0.3.9-dev` implements the event-driven fix for that regression, has passed the real Lua 5.0.2 compiler gate, and has now passed the focused two-client regression retest for both SoloCraftBots automatic tank marking and manual pfUI tank toggles.
-- Remaining broader runtime validation is Blizzard Raid Tab coverage, continued idle/error observation, and any remaining authority rejection spot-check. The 40-man raid path is now user-verified working.
+- Runtime validation is now complete on `0.3.9-dev`: automatic/manual comms, 40-man raid operation, Raid Tab display, and extended AQ40/Stratholme observation all passed with no reported regression.
 
 ## Testing
 
@@ -142,10 +142,9 @@
 ### Current Candidate Runtime Test
 - Version/commit: `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017`.
 - Static result: real Lua 5.0.2 compiler pass succeeded.
-- Passed so far: SoloCraftBots automatic tank marking broadcasts correctly to other TankIcons clients again; manual pfUI tank toggles also broadcast correctly; local markers continue to update.
-- Passed so far additionally: 40-man raid operation is working in runtime testing.
-- Pending: Blizzard Raid Tab confirmation; continued idle/error observation; any remaining non-authoritative rejection spot-check if practical.
-- Failed: None reported on `0.3.9-dev` so far.
+- Passed: SoloCraftBots automatic tank marking broadcasts correctly to other TankIcons clients; manual pfUI tank toggles broadcast correctly; local markers update correctly; 40-man raid operation works; Blizzard Raid Tab markers/positioning work; no other bad behaviour was observed during the remainder of AQ40 or during Stratholme.
+- Failed: None reported on `0.3.9-dev`.
+- Runtime status: focused validation is complete for this exact runtime candidate. Promotion still requires explicit user acceptance per the development contract.
 
 ### Last Completed Runtime Test
 - Version/commit: `0.3.7-dev` at `980adba5a54264887caeb3aafa23d908fcb71a8b`.
@@ -153,16 +152,12 @@
 - Failed: None recorded.
 
 ### Next Runtime Test
-Continue `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017`:
-- open the Blizzard Raid Tab and confirm tank icons are present where expected and positioned as before;
-- keep watching for Lua errors, stale markers, duplicate/flickering updates, or unexpected idle activity;
-- if convenient, retain one non-authoritative sync rejection spot-check before final acceptance.
-The 40-man raid path is user-verified working.
+No further focused runtime test is currently required for `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017`. The tested candidate passed automatic/manual comms, 40-man raid operation, Raid Tab display, and extended AQ40/Stratholme observation with no reported bad behaviour. Await explicit user acceptance before stable promotion.
 
 ## Planned / Next Work
 - The SoloCraftBots automatic-tank broadcast regression retest has passed on `0.3.9-dev`.
-- Complete the remaining Raid Tab/general observation runtime checklist.
-- If the complete runtime behaviour passes, record the exact tested commit and explicit user acceptance before preparing stable promotion.
+- Runtime validation is complete for the exact `0.3.9-dev` candidate.
+- Await explicit user acceptance, then prepare stable `0.3.9` promotion to `main` while preserving main-only/release-only content.
 ## Deferred / Out of Scope
 - Changes to pfUI itself or a pull request to pfUI.
 - Tank assignment logic changes.
@@ -182,4 +177,4 @@ The 40-man raid path is user-verified working.
 - Do not promote the performance rewrite until `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017` completes the focused runtime test and the user explicitly accepts it.
 
 ## Exact Next Step
-Continue runtime testing `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017`: verify the Blizzard Raid Tab tank markers/positioning, then keep watching for errors, stale markers, duplicate/flickering updates, or unexpected idle behaviour. SoloCraftBots automatic broadcast, manual pfUI broadcast, and the 40-man raid path are user-verified working. Do not promote until the Raid Tab check and final acceptance are complete.
+Obtain explicit user acceptance of `0.3.9-dev` at `0f73ffab2315cfde250a99266a5a020462a3b017`. Once accepted, prepare stable `0.3.9` promotion to `main`, preserving intended release-only/main-only content and excluding live development status files as required.
